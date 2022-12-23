@@ -20,7 +20,7 @@ library(forcats)
 ############################################################
 ### load data ####
 
-##1 OTU TABLE
+##1 OTU TABLE (actually ASV)
 otu_table = read.csv("heat-feature-table_R.txt", sep = '\t',  dec = ".", check.names = FALSE, row.names=1) #check.names = FALSE to avoid having X be automatically placed in front of each sampleID
 head (otu_table)
 str (otu_table)
@@ -112,7 +112,45 @@ phyloseq_merged_filtered_Porites_NoBNC
 ### data info (excluding blanks, negatives, contaminants) ###
 summary(sample_sums(phyloseq_merged_filtered_Porites_NoBNC)) # Between 1117 and 84479 reads per sample, mean = 17540
 
-                     
-                                
                                  
-                      
+############################################################
+### more filtering ### 
+
+### I remove one genotype as it has been identified as Porites lobata ###
+phyloseq_merged_filtered_Porites_NoBNC_noP2 <- subset_samples(phyloseq_merged_filtered_Porites_NoBNC, genotype != "P2")
+sum(sample_sums(phyloseq_merged_filtered_Porites_NoBNC_noP2)) # 2738889 reads
+summary(sample_sums(phyloseq_merged_filtered_Porites_NoBNC_noP2)) # Between 2435 and 84479 reads per sample, mean = 18889
+ 
+### I remove low abundance ASVs based on nseq (<5400 reads) ###                                 
+phyloseq_merged_porites_noP2_filtered <- prune_samples(sample_sums(phyloseq_merged_filtered_Porites_NoBNC_noP2) > 5400, phyloseq_merged_filtered_Porites_NoBNC_noP2) 
+#4 samples were removed (I have now 141 samples)
+summary(sample_sums(phyloseq_merged_porites_noP2_filtered)) # Between 5411 and 84479 reads per sample, mean = 19315                                
+                                 
+### I remove singletons ### 
+phyloseq_merged_porites_noP2_FINAL <- prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_filtered) >=2, phyloseq_merged_porites_noP2_filtered)
+phyloseq_merged_porites_noP2_FINAL = prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_FINAL) > 0, phyloseq_merged_porites_noP2_FINAL) #remove unobserved ASVs (sum 0 across all samples)
+phyloseq_merged_porites_noP2_FINAL #from 22612 ASVs to 12558                                 
+                                 
+### data info (FINAL DATASET) ###
+phyloseq_merged_porites_noP2_FINAL # 12558 ASVs
+sum(sample_sums(phyloseq_merged_porites_noP2_FINAL)) # 2723455 reads 
+summary(sample_sums(phyloseq_merged_porites_noP2_FINAL)) # Between 5411 and 84479 reads per sample, mean = 19315       
+         
+                                 
+############################################################
+### rarefaction curves ###        
+
+#seawater                                 
+phyloseq_merged_porites_noP2_FINAL_sw <- subset_samples(phyloseq_merged_porites_noP2_FINAL, sampleType == "seawater")
+rarecurve(t(otu_table(phyloseq_merged_porites_noP2_FINAL_sw)), step=50, cex=0.5, label = FALSE, xlab="Sequencing depth", col = "#00BFC3")
+
+#coral
+phyloseq_merged_porites_noP2_FINAL_porites <- subset_samples(phyloseq_merged_porites_noP2_FINAL, sampleType == "porites")
+rarecurve(t(otu_table(phyloseq_merged_porites_noP2_FINAL_porites)), step=50, cex=0.5, label = FALSE, xlab="Sequencing depth", col = "#F8766C")
+
+#feed                                 
+phyloseq_merged_porites_noP2_FINAL_food <- subset_samples(phyloseq_merged_porites_noP2_FINAL, sampleType == "food")
+rarecurve(t(otu_table(phyloseq_merged_porites_noP2_FINAL_food)), step=50, cex=0.5, label = FALSE, xlab="Sequencing depth", col = "#7CAD00")
+
+                                 
+                                 
