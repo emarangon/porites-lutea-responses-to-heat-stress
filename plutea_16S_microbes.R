@@ -1,1 +1,118 @@
+####################################################################################
+################### plutea - heat stress experiment - 16S analyses #################
+####################################################################################
 
+#loading libraries
+
+library(phyloseq) #microbial analyses
+library(tidyverse) #includes ggplot2, dplyr, tibble, tidyR
+library(RColorBrewer) #to change colours graphs
+library(scales) #to convert into percentage on graph
+library (decontam) #identify contaminants
+library(vegan) #adonis
+library(RVAideMemoire) #post hocs adonis
+library (DESeq2) #deseq analyses
+library(glmmTMB) #alpha diversity stats
+library(DHARMa) #checking model assumptions for stats alpha diversity
+library(forcats)
+
+
+############################################################
+### load data ####
+
+##1 OTU TABLE
+otu_table = read.csv("heat-feature-table_R.txt", sep = '\t',  dec = ".", check.names = FALSE, row.names=1) #check.names = FALSE to avoid having X be automatically placed in front of each sampleID
+head (otu_table)
+str (otu_table)
+
+##2 TAXA TABLE
+otu_matrix = read.csv("heat-taxonomy_R.tsv", sep = '\t', header=T, row.names=1) #I have separated each taxa level in the csv
+head (otu_matrix)
+# I split column Taxon in 7 columns and discard the extra 7 columns (Domain,Phylum,Class,Order,Family,Genus,Species) with no information; I keep the Taxon column
+TAXA_TABLE_split<-otu_matrix %>% separate(Taxon, c("Domain","Phylum","Class","Order","Family","Genus","Species"), sep=";", remove=TRUE) #I want to remove the old taxonomic column i.e. remove=TRUE) otherwise this column is not going to make work properly tax_glom and potentially other phyloseq functions
+TAXA_TABLE_matrix<-as.matrix(TAXA_TABLE_split)
+head (TAXA_TABLE_matrix)
+str (TAXA_TABLE_matrix)
+
+##3 METADATA
+metadata = read.csv("heat-metadata.txt", sep = '\t', row.names=1) #row.names=1 -> R takes the first column of your dataset and uses it as the rownames of your data frame. 
+head (metadata)
+metadata1 <- metadata %>% unite ("time.genotype", timePoint, sampleType, genotype, sep=".", remove=FALSE, na.rm = TRUE) # I add a column as combination of time and genotype to the metadata
+head (metadata1)
+metadata2 <- metadata1 %>% unite ("TreatTime", treatment, timePoint, sep=".", remove=FALSE, na.rm = TRUE) %>%
+  unite ("time.genotype.treat", treatment, timePoint, sampleType, genotype, sep=".", remove=FALSE, na.rm = TRUE) 
+head (metadata2)
+
+### import ###
+OTU = otu_table(otu_table, taxa_are_rows = TRUE) #table is oriented with taxa as rows
+TAX = tax_table (TAXA_TABLE_matrix)
+meta = sample_data(metadata2)
+phy_tree = read_tree("heat-tree.nwk") #rooted tree
+
+### merging ###
+phyloseq_merged = phyloseq(OTU, TAX, meta, phy_tree)
+phyloseq_merged
+
+
+############################################################
+### filtering ####
+
+### filtering eukaryota, mitochondria, chloroplasts ###
+phyloseq_merged_filtered <- phyloseq_merged %>% subset_taxa(Domain != "D_0__Eukaryota" & Family  != "D_4__Mitochondria" & Order   != "D_3__Chloroplast")
+
+### filtering out samples not belonging to the plutea experiment
+phyloseq_merged_filtered_Porites <- phyloseq_merged_filtered %>% subset_samples(experiment == "Porites")
+
+### data info (including blanks, negatives, contminants) ###
+sum(sample_sums(phyloseq_merged_filtered_Porites)) # 3157960 reads
+summary(sample_sums(phyloseq_merged_filtered_Porites)) # Between 7 and 84813 reads per sample, mean = 16887
+phyloseq_merged_filtered_Porites # 22613 ASVs for 187 samples
+
+
+############################################################
+### identifying contaminants using decontam ###
+
+##### 1. inspect library size
+#following tutorial https://benjjneb.github.io/decontam/vignettes/decontam_intro.html
+head(sample_data(phyloseq_merged_filtered_Porites))
+df <- as.data.frame(sample_data(phyloseq_merged_filtered_Porites))
+df$LibrarySize <- sample_sums(phyloseq_merged_filtered_Porites)
+df <- df[order(df$LibrarySize),]
+df$Index <- seq(nrow(df))
+ggplot(data=df, aes(x=Index, y=LibrarySize, color=sampleType)) + geom_point()
+
+##### 2. identify contaminants - prevalence
+sample_data(phyloseq_merged_filtered_Porites)$is.neg <- sample_data(phyloseq_merged_filtered_Porites)$sampleType == "blank"
+contamdf.prev_0.5 <- isContaminant(phyloseq_merged_filtered_Porites, method="prevalence", neg="is.neg", threshold=0.5)
+table(contamdf.prev_0.5$contaminant) #FALSE 22612 #TRUE 1 -> 1 ASVs has been identified as contaminants
+# Make phyloseq object of presence-absence in negative controls and true samples
+ps.pa <- transform_sample_counts(phyloseq_merged_filtered_Porites, function(abund) 1*(abund>0))
+ps.pa.neg <- prune_samples(sample_data(ps.pa)$sampleType == "blank", ps.pa)
+ps.pa.pos <- prune_samples(sample_data(ps.pa)$sampleType != "blank", ps.pa)
+# Make data.frame of prevalence in positive and negative samples
+df.pa <- data.frame(pa.pos=taxa_sums(ps.pa.pos), pa.neg=taxa_sums(ps.pa.neg),
+                    contaminant=contamdf.prev$contaminant)
+ggplot(data=df.pa, aes(x=pa.neg, y=pa.pos, color=contaminant)) + geom_point() +
+  xlab("Prevalence (Blanks)") + ylab("Prevalence (All Samples but blanks)")
+
+#### 3. removing contaminants
+#based on https://github.com/joey711/phyloseq/issues/652
+phyloseq_merged_filtered_Porites_NoBlanks <- subset_samples(phyloseq_merged_filtered_Porites, sampleType!="blank")
+phyloseq_merged_filtered_Porites_NoBlanksNonegatives <- subset_samples(phyloseq_merged_filtered_Porites_NoBlanks, sampleType!="negative") #no blanks no negatives
+taxa_are_rows(phyloseq_merged_filtered_Porites_NoBlanksNonegatives) #TRUE
+contaminants <- subset(contamdf.prev_0.5, contaminant == "TRUE") #I am using the strict threshold
+rownames(contaminants)
+# fd98346394a5c79e554003012cb33826 is the contaminant
+contaminants_only <- c("fd98346394a5c79e554003012cb33826")
+AllTaxa = taxa_names(phyloseq_merged_filtered_Porites_NoBlanksNonegatives)
+AllTaxa <- AllTaxa[!(AllTaxa %in% contaminants_only)]
+phyloseq_merged_filtered_Porites_NoBNC = prune_taxa(AllTaxa, phyloseq_merged_filtered_Porites_NoBlanksNonegatives) #no blanks no negatives no contaminants
+phyloseq_merged_filtered_Porites_NoBNC
+                                 
+### data info (excluding blanks, negatives, contaminants) ###
+summary(sample_sums(phyloseq_merged_filtered_Porites_NoBNC)) # Between 1117 and 84479 reads per sample, mean = 17540
+
+                     
+                                
+                                 
+                      
