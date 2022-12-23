@@ -2,6 +2,13 @@
 ################### plutea - heat stress experiment - 16S analyses #################
 ####################################################################################
 
+##EMMA MARANGON
+
+
+##########################################################
+#################### PRE-PROCESSING ######################
+##########################################################
+
 #loading libraries
 
 library(phyloseq) #microbial analyses
@@ -86,7 +93,7 @@ sample_data(phyloseq_merged_filtered_Porites)$is.neg <- sample_data(phyloseq_mer
 contamdf.prev_0.5 <- isContaminant(phyloseq_merged_filtered_Porites, method="prevalence", neg="is.neg", threshold=0.5)
 table(contamdf.prev_0.5$contaminant) #FALSE 22612 #TRUE 1 -> 1 ASVs has been identified as contaminants
 # Make phyloseq object of presence-absence in negative controls and true samples
-ps.pa <- transform_sample_counts(phyloseq_merged_filtered_Porites, function(abund) 1*(abund>0))
+ps.pa <- transform_sample_counts(phyloseq_merged_filtered_Porites, function(abund) {1*(abund>0)})
 ps.pa.neg <- prune_samples(sample_data(ps.pa)$sampleType == "blank", ps.pa)
 ps.pa.pos <- prune_samples(sample_data(ps.pa)$sampleType != "blank", ps.pa)
 # Make data.frame of prevalence in positive and negative samples
@@ -153,4 +160,156 @@ phyloseq_merged_porites_noP2_FINAL_food <- subset_samples(phyloseq_merged_porite
 rarecurve(t(otu_table(phyloseq_merged_porites_noP2_FINAL_food)), step=50, cex=0.5, label = FALSE, xlab="Sequencing depth", col = "#7CAD00")
 
                                  
+############################################################
+### normalization ###   
                                  
+#proportions
+phyloseq_merged_porites_noP2_FINALabundances = transform_sample_counts(phyloseq_merged_porites_noP2_FINAL, function(x){x / sum(x)}) # The first argument to this function is the phyloseq object you want to transform, and the second argument is an R function that defines the transformation (the counts of each sample will be transformed INDIVIDUALLY). 
+table(otu_table(phyloseq_merged_porites_noP2_FINALabundances)) #just to check it worked 
+phyloseq_merged_porites_noP2_FINALabundances_cutoff <- filter_taxa(phyloseq_merged_porites_noP2_FINALabundances, function(x) mean(x) > 1e-5, TRUE) #keeping only ASvs with mean > 0.00001; from 12558 to 2758 taxa (keeping 22% only) #https://joey711.github.io/phyloseq/preprocess.html
+phyloseq_merged_porites_noP2_FINALabundances_cutoff = prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_FINALabundances_cutoff) > 0, phyloseq_merged_porites_noP2_FINALabundances_cutoff) #to make sure no ASVs with sum 0 across all samples 
+phyloseq_merged_porites_noP2_FINALabundances_cutoff #2758 ASVs
+                                 
+#rarefaction                                 
+phyloseq_merged_porites_noP2_FINAL_noZero <- prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_FINAL) > 0, phyloseq_merged_porites_noP2_FINAL) #prune ASVs that are not present in at least one sample 
+phyloseq_merged_porites_noP2_FINALrarefied = rarefy_even_depth(phyloseq_merged_porites_noP2_FINAL_noZero, rngseed=1, sample.size = min(sample_sums(phyloseq_merged_porites_noP2_FINAL_noZero))) # RAREFYING; `set.seed(1)` was used to initialize repeatable random subsampling
+phyloseq_merged_porites_noP2_FINALrarefied = prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_FINALrarefied) > 0, phyloseq_merged_porites_noP2_FINALrarefied)  #remove unobserved ASVs (sum 0 across all samples)
+                                                                   
+      
+                                                                   
+                                                                   
+                                 
+###############################################################
+#################### BETA DIVERSITY ANALYSES ##################
+###############################################################
+                                                                   
+#all samples (coral, seawater, feed)                                                                   
+All_noP2_sqrt <- transform_sample_counts(phyloseq_merged_porites_noP2_FINALabundances_cutoff, function (x) sqrt(x)) #sqrt transformation
+
+#coral samples (NO seawater NO feed)   
+Tissue_noP2 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+Tissue_noP2_sqrt <- transform_sample_counts(Tissue_noP2, function (x) sqrt(x)) #sqrt
+   
+                                            
+                                            
+#### NMDS of all samples (coral, seawater, feed)
+                                                                  
+Colors <- c(
+  "#7CAC00", "#F8766B", "#00BFC2")
+ordinate(All_noP2_sqrt, "NMDS", "bray") %>% 
+  plot_ordination(All_noP2_sqrt, ., color = "sampleType", shape = "sampleType", title = "nmds_brays_porites") + 
+  theme_bw() + geom_point(size = 3) + 
+  scale_color_manual(values = Colors) + 
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  ) 
+
+#stress
+nmds_sampletype_stress <- ordinate(All_noP2_sqrt, "NMDS", "bray") #for next step
+cat("Stress:", nmds_sampletype_stress$stress, fill=TRUE) #to measure Stress
+#if stress <0.1 great; 0.1-0.2 good; 0.2-0.3, acceptable (treat with some caution), >0.3 unreliable
+       
+                                            
+                                            
+#### NMDS of CORAL samples (incuding baseline)
+                                            
+Colors <- c(
+  "#B3B4B4", "#F3E0B5", "#EB9623", "#B84040", "#B3B4B4")
+ordinate(Tissue_noP2_sqrt, "NMDS", "bray") %>% 
+  plot_ordination(Tissue_noP2_sqrt, ., color = "DHW", shape = "treatment", title = "nmds_brays_porites") + 
+  theme_bw() + geom_point(size = 4) + 
+  scale_color_manual(values = Colors) + 
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 14)
+  ) 
+
+#stress
+nmds_tissue_stress <- ordinate(Tissue_noP2_sqrt, "NMDS", "bray") #for next step
+cat("Stress:", nmds_tissue_stress$stress, fill=TRUE) #to measure Stress
+                                            
+
+                                            
+#### NMDS of CORAL samples (incuding baseline; Parental colonies separated)
+                                            
+Colors <- c(
+  "#B3B4B4", "#F3E0B5", "#EB9623", "#B84040", "#B3B4B4")
+ordinate(Tissue_noP2_sqrt, "NMDS", "bray") %>% 
+  plot_ordination(Tissue_noP2_sqrt, ., color = "DHW", shape = "treatment", title = "nmds_brays_porites_genotypes") + 
+  theme_bw() + geom_point(size = 4) + 
+  scale_color_manual(values = Colors) + 
+ facet_wrap(~genotype) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 14)
+    )                                            
+                                            
+                                            
+#### BARPLOT at the family level, coral samples only (baseline, ambient, heat)
+Porites_Fam <- tax_glom(phyloseq_merged_porites_noP2_FINALabundances_cutoff, taxrank = 'Family') #agglomerate data (merging taxa of the same Family)
+OnlyTissue <- subset_samples(Porites_Fam, sampleType == "porites") #only coral samples
+Porites_fam_alll <- subset_samples(OnlyTissue, treatment == "heat" | treatment == "ambient" | treatment == "baseline")
+porites_fam_all<- prune_taxa(taxa_sums(Porites_fam_alll) > 0, Porites_fam_alll) #to delete taxa which abundance sum is 0 
+porites_Gfam_sample_all <- merge_samples(porites_fam_all, "TreatTime", fun=mean)  #I create a new group named Sample
+porites_Gfam_sample_all_abund = transform_sample_counts(porites_Gfam_sample_all, function(x){x / sum(x)}) 
+porites_Gfam_sample_all_abund_melt <- psmelt(porites_Gfam_sample_all_abund)
+porites_Gfam_sample_all_abund_melt$Family <- as.character(porites_Gfam_sample_all_abund_melt$Family) # convert Family to a character vector from a factor
+porites_Gfam_sample_all_abund_melt$Family[porites_Gfam_sample_all_abund_melt$Abundance < 0.05] <- "Other" #rename classes with < 5% abundance
+porites_Gfam_sample_all_abund_melt2 <- porites_Gfam_sample_all_abund_melt %>% 
+  separate(Sample, c("treat", "timepoint"), remove=FALSE) #re-creating treatment variable to use in the bar plot
+nb.cols <- 18
+mycolors <- colorRampPalette(brewer.pal(17, "Set3"))(nb.cols)
+p3 <- ggplot(data=porites_Gfam_sample_all_abund_melt2, aes(x=Sample, y=Abundance, fill=Family))
+p3 + geom_bar(aes(), stat="identity", position="stack") +  
+  guides(fill=guide_legend(nrow=5)) + labs(title = "porites_Gfam_abund ") +
+  scale_fill_manual(values = mycolors) +
+ theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )  +
+  theme(legend.position="bottom", axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +
+  labs (y = "Mean relative abundance (%)") + #to change label y axis
+  scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
+                                
+                                            
+#### BARPLOT at the family level, feed and seawater (ambient, heat) samples only                                           
+NOTissue <- subset_samples(Porites_Fam, sampleType == "food" | sampleType == "seawater") #only feed and seawater samples
+porites_fam_all<- prune_taxa(taxa_sums(NOTissue) > 0, NOTissue) #to delete taxa which abundance sum is 0 
+porites_Gfam_sample_all <- merge_samples(porites_fam_all, "TreatTime", fun=mean)  #I create a new group named Sample 
+porites_Gfam_sample_all_abund = transform_sample_counts(porites_Gfam_sample_all, function(x){x / sum(x)})
+porites_Gfam_sample_all_abund_melt <- psmelt(porites_Gfam_sample_all_abund)
+porites_Gfam_sample_all_abund_melt$Family <- as.character(porites_Gfam_sample_all_abund_melt$Family) # convert Family to a character vector from a factor
+porites_Gfam_sample_all_abund_melt$Family[porites_Gfam_sample_all_abund_melt$Abundance < 0.05] <- "Other" #rename classes with < 5% abundance
+porites_Gfam_sample_all_abund_melt2 <- porites_Gfam_sample_all_abund_melt %>% 
+  separate(Sample, c("treat", "timepoint"), remove=FALSE) #re-creating treatment variable to use in the bar plot
+nb.cols <- 18
+mycolors <- colorRampPalette(brewer.pal(17, "Set3"))(nb.cols)
+p3 <- ggplot(data=porites_Gfam_sample_all_abund_melt2, aes(x=Sample, y=Abundance, fill=Family))
+p3 + geom_bar(aes(), stat="identity", position="stack") +  
+  guides(fill=guide_legend(nrow=5)) + labs(title = "porites_Gfam_abund ") +
+  scale_fill_manual(values = mycolors) +
+  theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )  +
+  theme(legend.position="bottom", axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +
+  labs (y = "Mean relative abundance (%)") + #to change label y axis
+  scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
