@@ -213,7 +213,7 @@ cat("Stress:", nmds_sampletype_stress$stress, fill=TRUE) #to measure Stress
        
                                             
                                             
-#### NMDS of CORAL samples (incuding baseline)
+#### NMDS of CORAL samples (incuding baseline) - main figure
                                             
 Colors <- c(
   "#B3B4B4", "#F3E0B5", "#EB9623", "#B84040", "#B3B4B4")
@@ -253,7 +253,7 @@ ordinate(Tissue_noP2_sqrt, "NMDS", "bray") %>%
     )                                            
                                             
                                             
-#### BARPLOT at the family level, coral samples only (baseline, ambient, heat)
+#### BARPLOT at the family level, coral samples only (baseline, ambient, heat) - main figure
 Porites_Fam <- tax_glom(phyloseq_merged_porites_noP2_FINALabundances_cutoff, taxrank = 'Family') #agglomerate data (merging taxa of the same Family)
 OnlyTissue <- subset_samples(Porites_Fam, sampleType == "porites") #only coral samples
 Porites_fam_alll <- subset_samples(OnlyTissue, treatment == "heat" | treatment == "ambient" | treatment == "baseline")
@@ -307,9 +307,51 @@ p3 + geom_bar(aes(), stat="identity", position="stack") +
   theme(legend.position="bottom", axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +
   labs (y = "Mean relative abundance (%)") + #to change label y axis
   scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
+         
+                                            
+######### boxplot of dominant families
+phyloseq::psmelt(OnlyTissue) %>%
+  subset (TreatTime != "no.algae" & TreatTime != "no.rotifers") %>%
+  subset(Family == "D_4__Alteromonadaceae" | Family == "D_4__Arenicellaceae" | Family == "D_4__Cellvibrionaceae" | Family == "D_4__Endozoicomonadaceae" | Family == "D_4__Flavobacteriaceae" | Family == "D_4__Kiloniellaceae" | Family == "D_4__Nitrincolaceae" | Family == "D_4__Nitrosopumilaceae" | Family == "D_4__Nodosilineaceae" | Family == "D_4__Rhodobacteraceae") %>%
+  mutate(name2 = fct_relevel(TreatTime, "baseline.baseline", "ambient.T0", "ambient.T1", "ambient.T2","ambient.T3", "ambient.T4", "ambient.T5", "heat.T0", "heat.T1", "heat.T2", "heat.T3", "heat.T4", "heat.T5")) %>% #reorder x axis
+  ggplot(data = ., aes(x = name2, y = Abundance,  fill=treatment)) +
+  geom_boxplot(outlier.shape  = NA) +
+  geom_jitter(height = 0, width = .2, size=0.8) +
+  labs(x = "", y = "Abundance\n") +
+  facet_wrap(~ Family, scales = "free") +
+  theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    legend.text = element_text(size = 25),
+    axis.text = element_text(size = 25),
+    strip.text.x = element_text(size = 30) #title facets
+  )  +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_manual(
+    values=c("#B3B4B4","#00AFBF", "#B13636"), #colour for treatment
+                    guide=guide_legend(reverse=TRUE)) +
+  labs (y = "Mean relative abundance (%)") +
+  scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
                                             
                                             
+#### STATS - adonis
+porites_adonis = as (sample_data(All_noP2_sqrt), "data.frame")
+porites_adonis$sampleType = as.factor(porites_adonis$sampleType)
+porites_d = phyloseq::distance(All_noP2_sqrt,'bray') 
+Adonis_porites <-adonis2(porites_d ~ sampleType, data=porites_adonis,  permutations = 10000, method = "bray")
+Adonis_porites 
+
+#dispersion
+beta <- betadisper(porites_d, sample_data(All_noP2_sqrt)$sampleType)
+boxplot (beta)
+disper.test = permutest(beta, permutations =10000)
+disper.test # p<0.05 - not ideal
+TukeyHSD (beta)
                                             
-                                            
-                                            
+# post hoc tests
+testing_sampleType = pairwise.perm.manova(porites_d, sample_data(All_noP2_sqrt)$sampleType,
+                                          nperm=10000, p.method = "BH")
+testing_sampleType$p.value
                                             
