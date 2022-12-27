@@ -20,8 +20,10 @@ library(vegan) #adonis
 library(RVAideMemoire) #post hocs adonis
 library (DESeq2) #deseq analyses
 library(glmmTMB) #alpha diversity stats
+library(emmeans) #alpha diversity stats
 library(DHARMa) #checking model assumptions for stats alpha diversity
 library(forcats)
+
 
 
 ############################################################
@@ -309,7 +311,7 @@ p3 + geom_bar(aes(), stat="identity", position="stack") +
   scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
          
                                             
-######### boxplot of dominant families
+#### Boxplot of dominant families
 phyloseq::psmelt(OnlyTissue) %>%
   subset (TreatTime != "no.algae" & TreatTime != "no.rotifers") %>%
   subset(Family == "D_4__Alteromonadaceae" | Family == "D_4__Arenicellaceae" | Family == "D_4__Cellvibrionaceae" | Family == "D_4__Endozoicomonadaceae" | Family == "D_4__Flavobacteriaceae" | Family == "D_4__Kiloniellaceae" | Family == "D_4__Nitrincolaceae" | Family == "D_4__Nitrosopumilaceae" | Family == "D_4__Nodosilineaceae" | Family == "D_4__Rhodobacteraceae") %>%
@@ -336,7 +338,7 @@ phyloseq::psmelt(OnlyTissue) %>%
   scale_y_continuous(labels=percent) #to change y axis tick marks to percentage (need library scales)
                                             
                                             
-#### STATS - adonis
+#### STATS - adonis - coral vs feed vs seawater microbiota
 porites_adonis = as (sample_data(All_noP2_sqrt), "data.frame")
 porites_adonis$sampleType = as.factor(porites_adonis$sampleType)
 porites_d = phyloseq::distance(All_noP2_sqrt,'bray') 
@@ -354,4 +356,459 @@ TukeyHSD (beta)
 testing_sampleType = pairwise.perm.manova(porites_d, sample_data(All_noP2_sqrt)$sampleType,
                                           nperm=10000, p.method = "BH")
 testing_sampleType$p.value
+                  
+                                            
+#### STATS - adonis - coral microbiota: effects of time and treatment                                      
+Tissue_noP2_sqrt_noBaseline <- subset_samples (Tissue_noP2_sqrt, treatment != "baseline")
+porites_adonis = as (sample_data(Tissue_noP2_sqrt_noBaseline), "data.frame")
+porites_adonis$treatment = as.factor(porites_adonis$treatment)
+porites_adonis$timePoint = as.factor(porites_adonis$timePoint)
+porites_d = phyloseq::distance(Tissue_noP2_sqrt_noBaseline,'bray') 
+Adonis_porites <-adonis2(porites_d ~ timePoint*treatment + genotype + tank, data=porites_adonis,  permutations = 10000, method = "bray")
+Adonis_porites 
+                                            
+#dispersion time
+beta <- betadisper(porites_d, sample_data(Tissue_noP2_sqrt_noBaseline)$timePoint)
+plot(beta)
+boxplot (beta)
+disper.test = permutest(beta, permutations =10000)
+disper.test # OK  
+#dispersion treatment                                            
+beta <- betadisper(porites_d, sample_data(Tissue_noP2_sqrt_noBaseline)$treatment)
+plot(beta)
+boxplot (beta)
+disper.test = permutest(beta, permutations =10000)
+disper.test # OK   
+#dispersion parental colony                                               
+beta <- betadisper(porites_d, sample_data(Tissue_noP2_sqrt_noBaseline)$genotype)
+plot(beta)
+boxplot (beta)
+disper.test = permutest(beta, permutations =10000)
+disper.test # OK    
+                                            
+# post hoc tests
+testing_genotype = pairwise.perm.manova(porites_d, sample_data(Tissue_noP2_sqrt_noBaseline)$genotype,
+                                          nperm=10000, p.method = "BH")
+testing_genotype$p.value #each parental colony distinct microbiome                                            
+sample_data(Tissue_noP2_sqrt_noBaseline)$TimeTemp <-interaction(sample_data(Tissue_noP2_sqrt_noBaseline)$timePoint, sample_data(Tissue_noP2_sqrt_noBaseline)$treatment)
+testing_treattime = pairwise.perm.manova(porites_d, sample_data(Tissue_noP2_sqrt_noBaseline)$TimeTemp,
+                                          nperm=10000, p.method = "BH")
+testing_treattime$p.value                                            
+                                            
+                                            
+####################################################
+################## DESEQ ANALYSES ##################
+####################################################
+phyloseq_merged_porites_noP2_FINAL # I need count data for DESeq (no proportions)
+phyloseq_merged_porites_noP2_FINAL_porites <- subset_samples(phyloseq_merged_porites_noP2_FINAL, sampleType == "porites" & treatment != "baseline") #only coral and no baseline samples
+phyloseq_merged_porites_noP2_FINAL_porites_noZero <- prune_taxa(taxa_sums(phyloseq_merged_porites_noP2_FINAL_porites) > 0, phyloseq_merged_porites_noP2_FINAL_porites)                                            
+sample_data(phyloseq_merged_porites_noP2_FINAL_porites_noZero)$treatment <- as.factor(sample_data(phyloseq_merged_porites_noP2_FINAL_porites_noZero)$treatment) 
+sample_data(phyloseq_merged_porites_noP2_FINAL_porites_noZero)$genotype <- as.factor(sample_data(phyloseq_merged_porites_noP2_FINAL_porites_noZero)$genotype)                                            
+
+############### ambient T0 vs heat T0
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T0" | TreatTime == "heat.T0")
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype) #The function phyloseq_to_deseq2 converts your phyloseq-format microbiome data into a DESeqDataSet with dispersions estimated, using the experimental design formula
+levels(Q1_dds$treatment) #double check levels as expected
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient") #I want this as reference
+levels(Q1_dds$treatment) #double check it worked (the first listed is the reference)
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts") #run DESEQ function; the default multiple-inference correction is Benjamini-Hochberg, and occurs within the DESeq function. # sfType="poscounts" deals with 0 
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds) # lists variables of the final model
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE) #the last one is my reference
+head(results(Q1_dds, tidy=TRUE)) #let's look at the results table
+summary (res_Q1) #summary of results
+res_Q1_order <- res_Q1[order(res_Q1$padj),] #order according to padj 
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ] #only significant
+res_Q1_order_sig #1 ASVs; timePoint heat vs ambient because ambient is the reference
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix")) #create dataframe with taxonomy
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T0" | TreatTime == "heat.T0")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("e597cf7906dfdbf035303bf06825ae3c"))
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE) #I create OTU_fam column
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+###no ASVs present in at least 50% of samples within each category
+
+
+############### ambient T1 vs heat T1
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T1" | TreatTime == "heat.T1")
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype) 
+levels(Q1_dds$treatment) 
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient")
+levels(Q1_dds$treatment) 
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts")
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds)
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE)
+head(results(Q1_dds, tidy=TRUE))
+summary (res_Q1)
+res_Q1_order <- res_Q1[order(res_Q1$padj),] 
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ]
+res_Q1_order_sig #5 ASVs
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix"))
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T1" | TreatTime == "heat.T1")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("ec706a9c4b9122236e52c792866606cd", "62a42b9060da2e9b281a191e7db519a1", "32bc52e08cc32a1708110af78c22e199",
+                                                                              "069f8e6a2a401cce7b6a1292b832c3cc", "e445cce7b3065ed923ad91b18656b594"
+))
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE) 
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+###no ASVs present in at least 50% of samples within each category
+
+
+############### ambient T2 vs heat T2
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T2" | TreatTime == "heat.T2")
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype) 
+levels(Q1_dds$treatment) 
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient") 
+levels(Q1_dds$treatment)
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts") 
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds)
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE) 
+head(results(Q1_dds, tidy=TRUE)) 
+summary (res_Q1) 
+res_Q1_order <- res_Q1[order(res_Q1$padj),] 
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ] 
+res_Q1_order_sig #5 ASVs
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix"))
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T2" | TreatTime == "heat.T2")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("0b50994d139f92bd27db38f91b5023b7", "19ecabf0b95b8ccb6d75b3ae95178b4e", "d8876415575b0e723bf588954e25ef74",
+                                                                              "9fad0e97961eaed64ac123e21461a9aa", "6b9aacca12c4be537807db9f2524fabc"
+))
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE) #I create OTU_fam column
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+###no ASVs present in at least 50% of samples within each category
+           
+                                            
+############### ambient T3 vs heat T3
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T3" | TreatTime == "heat.T3")
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype)
+levels(Q1_dds$treatment) 
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient") 
+levels(Q1_dds$treatment)
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts")
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds)
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE)
+head(results(Q1_dds, tidy=TRUE)) 
+summary (res_Q1) 
+res_Q1_order <- res_Q1[order(res_Q1$padj),] 
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ] 
+res_Q1_order_sig #5 ASVs
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix")) 
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T3" | TreatTime == "heat.T3")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("ead3872a010eab5f7baf2848b98dcee5", "0b50994d139f92bd27db38f91b5023b7", "ab42a580e6e224c7c5205d383a3444df",
+                                                                              "7479a25bf010ea5650cc0a934ac5cabf", "a5f2fa7eee368d4fb7dd9ef2134edf63"))
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE) #I create OTU_fam column
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+### 1 ASV present in at least 50% of samples within each category: ead3872a010eab5f7baf2848b98dcee5
+
+
+############### ambient T4 vs heat T4
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T4" | TreatTime == "heat.T4")
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype) 
+levels(Q1_dds$treatment) 
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient")
+levels(Q1_dds$treatment) 
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts")
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds)
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE)
+head(results(Q1_dds, tidy=TRUE)) 
+summary (res_Q1)
+res_Q1_order <- res_Q1[order(res_Q1$padj),]  
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ]
+res_Q1_order_sig #20 ASVs
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix")) 
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T4" | TreatTime == "heat.T4")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("55a3a7dff7f10c5f630c326355572bdf", "e7fc92ade9eef09a7181469aa0f6575f", "effa3245acfbf1689906feb50c144f66",
+                                                                              "74eaf8d4a7bbc53947a8b4c3b00cc2ec", "bced101120be21e9dbcd6afdd6cadf29", "c19c9bdafbf13a2e2350768e51743378",
+                                                                              "1b8de0faefa8f6891626d91028667b2a", "bda24e4d0e58912087ac259cbc334192", "643f37196749c6ec3ec5915e26bce7b8",
+                                                                              "40374b248a7e70f57e32b66900f6d546", "db928247870bf0627a0a0c7cd382795c", "b8807fbf53c538f2671645208c798f11",
+                                                                              "849c000404a68b97a3b9e0f8fabf2e42", "04f652b10a1f4b4a0326bdc516a883c4", "dffda5880f1a50ba3287c598412b341e",
+                                                                              "0d52758540e7b906a8414b7d90b9f727", "1dcbb8169ffbd18969c5dd4fea6bedae", "7f450be96e9d000e93b555fb75e9de6e",
+                                                                              "b65598390a16ce109ce4732249d5b59f", "694df3c7f8b6b66c922ed51a965d75d0"
+))
+
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE) #I create OTU_fam column
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+## 3 ASVs differntially abundant in at least 50 % samples: b65598390a16ce109ce4732249d5b59f, 694df3c7f8b6b66c922ed51a965d75d0, 7f450be96e9d000e93b555fb75e9de6e
+
+
+############### ambient T5 vs heat T5
+Filtered <- subset_samples(phyloseq_merged_porites_noP2_FINAL_porites_noZero, TreatTime == "ambient.T5" | TreatTime == "heat.T5")
+table(sample_data(Filtered)$sampleType)
+Filtered <- prune_taxa(taxa_sums(Filtered) > 0, Filtered)
+Q1_dds = phyloseq_to_deseq2(Filtered, ~treatment + genotype)
+levels(Q1_dds$treatment) 
+Q1_dds$treatment<-relevel(Q1_dds$treatment, ref="ambient")
+levels(Q1_dds$treatment) 
+Q1_dds = DESeq(Q1_dds, test="Wald", fitType="parametric", sfType="poscounts")
+head(Q1_dds)
+colData(Q1_dds)
+resultsNames (Q1_dds) 
+alpha = 0.01
+res_Q1 <- results(Q1_dds, contrast=c("treatment","heat", "ambient"), independentFiltering = TRUE, alpha=alpha, pAdjustMethod = "BH", parallel=TRUE) 
+head(results(Q1_dds, tidy=TRUE)) 
+summary (res_Q1) 
+res_Q1_order <- res_Q1[order(res_Q1$padj),] 
+res_Q1_order = res_Q1_order[order(res_Q1_order$padj, na.last=NA), ]
+res_Q1_order_sig = res_Q1_order[(res_Q1_order$padj < alpha), ]
+res_Q1_order_sig #26 ASVs
+res_Q1_table_sign = cbind(as(res_Q1_order_sig, "data.frame"), as(tax_table(Filtered)[rownames(res_Q1_order_sig), ], "matrix"))
+
+#bubbleplot
+filtering1 <- subset_samples(phyloseq_merged_porites_noP2_FINALabundances_cutoff, sampleType == "porites")
+table(sample_data(filtering1)$sampleType)
+filtering <- subset_samples(filtering1, TreatTime == "ambient.T5" | TreatTime == "heat.T5")
+table(sample_data(filtering)$TreatTime)
+table(sample_data(filtering)$sampleType)
+physeq.subset <- subset_taxa(filtering, rownames(tax_table(filtering)) %in% c("753bf49fb914820d19755bec2fd3bd73", "b65598390a16ce109ce4732249d5b59f", "b8807fbf53c538f2671645208c798f11",
+                                                                              "849c000404a68b97a3b9e0f8fabf2e42", "760e446f1f1a17e507022634b1bd3f4b", "a08e03bc999c94b24f2512cb2c85677c",
+                                                                              "fa3586c81b9c2c808496a040fd751ffa", "27c54877d2a5b58d5b569609cecfcd51", "5aaf9af5f2a07af52e4da802fe1c0b89",
+                                                                              "f7f6e9c18ba50fcc4d2e245728062e7c", "cd98aa9fdffe73513428a05e68fdf1da", "4865c6bd53b4c415ae9c9e676cde06be",
+                                                                              "694df3c7f8b6b66c922ed51a965d75d0", "6255e5c6afad6ba4213e20224eb4aa15", "598ffdfead8438e27976c14c36098607",
+                                                                              "74820d2c3ba5a931dc083dd159abd8bb", "ea9ab787d580ae677de7a846c16a0466", "aab1ddf395b392bc5414a73e7f2e85a1", 
+                                                                              "5eab1ddfbbe3615ea476c7e94dabf486", "48a6a0e363dfb3823afdb092a0bb834d", "4f3c49786ad830a7b0b107c93704f4ce",
+                                                                              "cdd5d101fdefb45735fd15533ef52d98", "ae3dedc407ae084178fce8f6e060ae13", "36db701374d60d600bcfee2828c30b1c",
+                                                                              "eb1516031724c4bc8a71287dfda3aa75", "ab5ecef1c061a5a36d43e89a7fe19fdc"
+))
+physeq.subset <- prune_taxa(taxa_sums(physeq.subset) > 0, physeq.subset)
+physeq.subset_m <- psmelt (physeq.subset)
+physeq.subset_m <- physeq.subset_m %>% unite("OTU_fam", Class, Family,  Genus, OTU, sep=",", remove=FALSE, na.rm = TRUE)
+bubbleplot <- ggplot(physeq.subset_m, aes(x = sample, y = OTU_fam, color = Class)) + 
+  geom_point(aes(size = ifelse(Abundance==0, NA, Abundance))) + 
+  scale_size(range = c(3,20)) +
+  theme_bw() +
+  theme(axis.title.y=element_blank(),  axis.ticks.y=element_blank(),
+        legend.text=element_text(size=20), legend.title=element_text(size=20), 
+        axis.text.x=element_text(angle=90,hjust=1,vjust=0.5, size=22), axis.text.y=element_text(size=22, face="bold")) +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  facet_grid(~ treatment, scales = "free_x", space = "free_x")
+bubbleplot
+# 15 ASVs differentially abudant in at least 50% samples: b8807fbf53c538f2671645208c798f11, ab5ecef1c061a5a36d43e89a7fe19fdc, 694df3c7f8b6b66c922ed51a965d75d0, aab1ddf395b392bc5414a73e7f2e85a1, ea9ab787d580ae677de7a846c16a0466
+#ae3dedc407ae084178fce8f6e060ae13, eb1516031724c4bc8a71287dfda3aa75, 6255e5c6afad6ba4213e20224eb4aa15, 598ffdfead8438e27976c14c36098607, 48a6a0e363dfb3823afdb092a0bb834d, cdd5d101fdefb45735fd15533ef52d98,
+#5eab1ddfbbe3615ea476c7e94dabf486, 4f3c49786ad830a7b0b107c93704f4ce, 74820d2c3ba5a931dc083dd159abd8bb, 36db701374d60d600bcfee2828c30b1c
+
+                                            
+############### summarizing differentially abundant ASVs in plots
+
+#main
+phyloseq::psmelt(phyloseq_merged_porites_noP2_FINALabundances_cutoff) %>%
+  subset (TreatTime != "no.algae" & TreatTime != "no.rotifers" & TreatTime != "baseline.baseline") %>% #I have removed baseline because not in deseq analyses
+  subset (sampleType == "porites") %>%
+  subset (OTU == "694df3c7f8b6b66c922ed51a965d75d0" | OTU == "b65598390a16ce109ce4732249d5b59f"| OTU == "48a6a0e363dfb3823afdb092a0bb834d" |
+            
+            OTU == "ea9ab787d580ae677de7a846c16a0466" | OTU == "6255e5c6afad6ba4213e20224eb4aa15"| OTU == "7f450be96e9d000e93b555fb75e9de6e"
+          ) %>%
+  ggplot(data = ., aes(x = TreatTime, y = Abundance,  fill=treatment)) +
+  geom_boxplot(outlier.shape  = NA) +
+  geom_jitter(height = 0, width = .2, size=0.8) +
+  labs(x = "", y = "Abundance\n") +
+  facet_wrap(~ OTU, scales = "free") +
+  theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )  +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme (strip.text = element_text(size = 6, margin = margin())) + 
+  scale_fill_manual(values=c("#B4B4B5", "#B13636"), 
+                    guide=guide_legend(reverse=TRUE)) +
+  labs (y = "Mean relative abundance (%)") +
+  scale_y_continuous(labels=percent) 
+                                            
+#supplementary figure
+phyloseq::psmelt(phyloseq_merged_porites_noP2_FINALabundances_cutoff) %>%
+  subset (TreatTime != "no.algae" & TreatTime != "no.rotifers" & TreatTime != "baseline.baseline") %>% #I have removed baseline because not in deseq analyses
+  subset (sampleType == "porites") %>%
+  subset (OTU == "ead3872a010eab5f7baf2848b98dcee5" | OTU == "b8807fbf53c538f2671645208c798f11"| OTU == "ab5ecef1c061a5a36d43e89a7fe19fdc"| 
+            OTU ==  "aab1ddf395b392bc5414a73e7f2e85a1"| OTU == "ae3dedc407ae084178fce8f6e060ae13"| OTU == "eb1516031724c4bc8a71287dfda3aa75"| 
+            OTU == "598ffdfead8438e27976c14c36098607"| OTU == "cdd5d101fdefb45735fd15533ef52d98"| OTU == "5eab1ddfbbe3615ea476c7e94dabf486"| 
+            OTU =="4f3c49786ad830a7b0b107c93704f4ce"| OTU == "74820d2c3ba5a931dc083dd159abd8bb"| OTU == "36db701374d60d600bcfee2828c30b1c") %>%
+  ggplot(data = ., aes(x = TreatTime, y = Abundance,  fill=treatment)) +
+  geom_boxplot(outlier.shape  = NA) +
+  geom_jitter(height = 0, width = .2, size=0.8) +
+  labs(x = "", y = "Abundance\n") +
+  facet_wrap(~ OTU, scales = "free") +
+  theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )  +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  theme (strip.text = element_text(size = 6, margin = margin())) + 
+  scale_fill_manual(values=c("#B4B4B5", "#B13636"), 
+                    guide=guide_legend(reverse=TRUE)) +
+  labs (y = "Mean relative abundance (%)") +
+  scale_y_continuous(labels=percent) 
+                                           
+                                            
+                                            
+################################################################
+#################### ALPHA DIVERSITY ANALYSES ##################
+################################################################   
+                                            
+#I use rarefied data for Shannon diversity 
+rarefied_Porites_noP2_OnlyTissue <- subset_samples(phyloseq_merged_porites_noP2_FINALrarefied, sampleType == "porites")
+
+#alpha diversity plot                                            
+plot_richness(rarefied_Porites_noP2_OnlyTissue, x="timePoint", color = "treatment", measures=c("Shannon")) + 
+  geom_boxplot(alpha=0.3, colour = "black", lwd=0.2) + labs(title = "Shannon") +
+  theme( axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) + aes (fill=treatment) +
+  theme_bw() +
+  theme( 
+    plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  scale_color_manual(values = Colors) +
+  scale_fill_manual (values = Colors)                                            
+                                            
+#alpha diversity stats                                            
+rich = estimate_richness(rarefied_Porites_noP2_OnlyTissue, split=TRUE)
+rich<-as.data.frame(rich)
+RICHNESSVER<-tibble::rownames_to_column(as.data.frame(rich), var="sampleID")
+RICHNESSVER$sampleID = gsub("X", "", RICHNESSVER$sampleID)
+metadata3 <- tibble::rownames_to_column(as.data.frame(metadata2), var="sampleID")
+richness_table_ver <- inner_join(RICHNESSVER, metadata3, by="sampleID")
+porites_richness <- as.data.frame(richness_table_ver)                                            
+richness_table_porites_NObaseline <- subset (porites_richness, DHW != "no") #remove baseline samples
+richness_table_porites_NObaseline$timePoint <- as.factor(richness_table_porites_NObaseline$timePoint)
+richness_table_porites_NObaseline$treatment <- as.factor(richness_table_porites_NObaseline$treatment)
+richness_table_porites_NObaseline$genotype <- as.factor(richness_table_porites_NObaseline$genotype)
+model_Shannon_porites <- glmmTMB(Shannon ~ timePoint*treatment+genotype + (1|tank), data = richness_table_porites_NObaseline)
+S.resid <- model_Shannon_porites %>% simulateResiduals(plot=TRUE, integerResponse = TRUE) #good!
+model_Shannon_porites %>% summary ()
+model_Shannon_porites %>% emmeans (~treatment|timePoint) %>% pairs %>%rbind(adjust='sidak')                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
+                                            
                                             
