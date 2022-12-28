@@ -133,5 +133,46 @@ summary(de)
 #################### KOG enrichment analyses (KOGMWU) ######################
 ############################################################################
                        
+cladocopium_annotations <- read.csv("./eggNOG_output_cladocopium_annotation_ALLgo.tsv", sep = '\t', header=TRUE) #annotation reference genome using EggNOG mapper
+cladocopium_annotations_KOG = cladocopium_annotations[,c(1, 7)] #keep only gene and KOG                    
+cladocopium_annotations_KOG$query <- gsub (".mRNA1", "", as.character(cladocopium_annotations_KOG$query)) #editing gene names to match my reads
+cladocopium_annotations_KOG_noNA <- cladocopium_annotations_KOG[!grepl("-", cladocopium_annotations_KOG$COG_category),] #removing the unassigned
+
+#I want to have one KOG per gene per row
+cladocopium_annotations_KOG_noNA_multiple <- cladocopium_annotations_KOG_noNA %>% separate (COG_category, c("kog","B", "C", "D", "E"), sep=cumsum(c(1,1,1,1,1)))
+cladocopium_annotations_KOG_noNA_multiple <- cladocopium_annotations_KOG_noNA_multiple %>% mutate_all(na_if,"")
+first = cladocopium_annotations_KOG_noNA_multiple[,c(1,2)]
+second = cladocopium_annotations_KOG_noNA_multiple[,c(1,3)]
+second <- na.omit(second) #removing NA lines
+third = cladocopium_annotations_KOG_noNA_multiple[,c(1,4)]
+third <- na.omit(third) #removing NA lines
+fourth = cladocopium_annotations_KOG_noNA_multiple[,c(1,5)]
+fourth <- na.omit(fourth) #removing NA lines
+fifth = cladocopium_annotations_KOG_noNA_multiple[,c(1,6)]
+fifth <- na.omit(fifth) #removing NA lines
+colnames(second) <- c("query", "kog") #need to be same colname for dplyr::bind_rows step
+colnames(third) <- c("query", "kog")
+colnames(fourth) <- c("query", "kog")
+colnames(fifth) <- c("query", "kog")
+combined12 <- dplyr::bind_rows(first, second) #multiple rows per gene if >1 KOG
+combined123 <- dplyr::bind_rows(combined12, third)
+combined1234 <- dplyr::bind_rows(combined123, fourth)
+cladocopium_gene2kog <- dplyr::bind_rows(combined1234, fifth) #Two-column dataframe of gene annotations: gene id, KOG class
+head(cladocopium_gene2kog)                       
+
+save(cladocopium_filtered2, file = "cladocopium_filtered2.R.data")
+save(cladocopium_gene2kog, file = "cladocopium_gene2kog.R.data")   
                        
+#CONTINUATION KOG ANALYSES IS IN plutea_transcriptomics_host.R
                        
+ 
+                       
+###########################################################################
+#################### GO enrichment analyses (GO_MWU) ######################
+###########################################################################
+                       
+cladocopium_annotations <- read.csv("./eggNOG_output_cladocopium_annotation_ALLgo.tsv", sep = '\t', header=TRUE)
+cladocopium_annotations_GO = cladocopium_annotations[,c(1, 10)] #keep only gene and GO        
+cladocopium_annotations_GO$GOs <- gsub(',', ';', cladocopium_annotations_GO$GOs) #for GO_MWU, string of concatenated GO terms separates by semicolons                       
+cladocopium_annotations_GO$GOs <- gsub('-', 'unknown', cladocopium_annotations_GO$GOs) #for GO_MWU, the genes without annotation should be called "unknown", if you want to analyze these too
+cladocopium_annotations_GO$query <- gsub (".mRNA1", "", as.character(cladocopium_annotations_GO$query)) #editing gene names to match my reads                       
