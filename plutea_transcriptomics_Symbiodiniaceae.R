@@ -2,7 +2,7 @@
 ################### plutea - heat stress experiment - Symbiodiniaceae transcriptomics analyses #################
 ################################################################################################################
 
-##EMMA MARANGON
+##author EMMA MARANGON
 
 
 ##########################################################
@@ -36,7 +36,7 @@ remove <- "P4.31" # because of QC
 cladocopium_counts2 <- cladocopium_counts1[, !(names(cladocopium_counts1) %in% remove)] #remove sample
 remove <- "P3.33" # because of QC
 cladocopium_counts3 <- cladocopium_counts2[, !(names(cladocopium_counts2) %in% remove)] #remove sample
-remove <- "P3.18" # because of outlier (WGCNA)
+remove <- "P3.18" # because identified as outlier (WGCNA clustering)
 cladocopium_counts <- cladocopium_counts3[, !(names(cladocopium_counts3) %in% remove)] #remove sample
 head (cladocopium_counts)
 #I'll use 33 samples (36-3) for downstream analyses
@@ -94,3 +94,44 @@ cladocopium_filtered2_cpm <- cpm(cladocopium_filtered2, log=TRUE) #converting in
 
 
 
+#######################################################################
+#################### DEGs analyses (limma-vooom) ######################
+#######################################################################
+
+treatment <- cladocopium_filtered2$samples$treatment
+treatment <- factor(treatment)
+time <- cladocopium_filtered2$samples$time
+time <- factor(time)
+group <- interaction(treatment, time)
+group
+group <- factor(group)
+levels (group)
+genotype <- cladocopium_filtered2$samples$genotype
+genotype <- factor(genotype)
+mm <- model.matrix(~0 + group)
+v <- voom(cladocopium_filtered2, mm, plot = T)
+cor <- duplicateCorrelation(v, mm, block=genotype)
+cor$consensus.correlation #0.1692757
+fit <- lmFit(object=v, design=mm, 
+             block=genotype, correlation=cor$consensus.correlation)
+head(coef(fit))
+contr <- makeContrasts((
+                       groupHeat.T2 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2)/3,
+                       groupHeat.T4 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2 + groupAmbient.T4)/4,
+                       levels = colnames(coef(fit)))
+contr
+fit.cont <- contrasts.fit(fit, contr)
+e.fit.cont <- eBayes(fit.cont)
+de <- decideTests(e.fit.cont)
+summary(de) 
+#9 down and 18 up in low relative to no stress
+#1353 down and 1841 up in moderate relative to no stress
+                       
+
+
+############################################################################
+#################### KOG enrichment analyses (KOGMWU) ######################
+############################################################################
+                       
+                       
+                       
