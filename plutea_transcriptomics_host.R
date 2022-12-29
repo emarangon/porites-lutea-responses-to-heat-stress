@@ -138,3 +138,162 @@ summary(de)
 #################### KOG enrichment analyses (KOGMWU) ######################
 ############################################################################
                        
+host_annotations <- read.csv("./eggNOG_output_plutea_annotation_ALLgo.tsv", sep = '\t', header=TRUE) #annotation reference genome using EggNOG mapper
+host_annotations_KOG = host_annotations[,c(1, 7)] #keep only gene and KOG                       
+host_annotations_KOG$query <- gsub (".m1", "", as.character(host_annotations_KOG$query))  #editing gene names to match my reads
+host_annotations_KOG$query <- gsub (".model.", ".TU.", as.character(host_annotations_KOG$query))  #editing gene names to match my reads
+host_annotations_KOG_noNA <- host_annotations_KOG[!grepl("-", host_annotations_KOG$COG_category),] #removing the unassigned
+                       
+#I want to have one KOG per gene per row
+host_annotations_KOG_multiple <- host_annotations_KOG_noNA %>% separate (COG_category, c("kog","B", "C", "D", "E"), sep=cumsum(c(1,1,1,1)))                       
+host_annotations_KOG_multiple <- host_annotations_KOG_multiple %>% mutate_all(na_if,"")
+first = host_annotations_KOG_multiple[,c(1,2)]
+second = host_annotations_KOG_multiple[,c(1,3)]
+second <- na.omit(second) #removing NA lines
+third = host_annotations_KOG_multiple[,c(1,4)]
+third <- na.omit(third) #removing NA lines
+fourth = host_annotations_KOG_multiple[,c(1,5)]
+fourth <- na.omit(fourth) #removing NA lines
+fifth = host_annotations_KOG_multiple[,c(1,6)]
+fifth <- na.omit(fifth) #removing NA lines
+colnames(second) <- c("query", "kog") #need to be same colname for dplyr::bind_rows step
+colnames(third) <- c("query", "kog")
+colnames(fourth) <- c("query", "kog")
+colnames(fifth) <- c("query", "kog")
+combined12 <- dplyr::bind_rows(first, second) #multiple rows per gene if >1 KOG
+combined123 <- dplyr::bind_rows(combined12, third)
+combined1234 <- dplyr::bind_rows(combined12, fourth)
+host_gene2kog <- dplyr::bind_rows(combined1234, fifth) #Two-column dataframe of gene annotations: gene id, KOG class
+head (host_gene2kog)                       
+                    
+                       
+################################
+##### host comparisons
+                       
+treatment <- host_filtered2$samples$treatment
+treatment <- factor(treatment)
+time <- host_filtered2$samples$time
+time <- factor(time)
+group <- interaction(treatment, time)
+group
+group <- factor(group)
+genotype <- host_filtered2$samples$genotype
+genotype <- factor(genotype)
+mm <- model.matrix(~0 + group)
+v <- voom(host_filtered2, mm, plot = T)
+cor <- duplicateCorrelation(v, mm, block=genotype)                       
+fit <- lmFit(object=v, design=mm, 
+             block=genotype, correlation=cor$consensus.correlation)
+head(coef(fit))
+                          
+                       
+#### HOST no stress vs low stress
+                       
+contr <- makeContrasts(groupHeat.T2 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2)/3,
+                       levels = colnames(coef(fit)))
+fit.cont <- contrasts.fit(fit, contr)
+e.fit.cont <- eBayes(fit.cont)
+top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
+keep <- tibble::rownames_to_column(top.table, "genes") 
+host_only_degs_NOvsLOW_block_logF = keep[,c(1,2)] 
+head (host_only_degs_NOvsLOW_block_logF)
+
+host_kogmwu_data = host_only_degs_NOvsLOW_block_logF
+row.names(host_kogmwu_data)=NULL 
+kog_NOvsLOW_host = kog.mwu(host_kogmwu_data, host_gene2kog, Alternative = "t")
+kog_NOvsLOW_host                       
+                       
+  
+#### HOST no stress vs moderate stress                       
+                       
+contr <- makeContrasts(groupHeat.T4 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2 + groupAmbient.T4)/4,
+                       levels = colnames(coef(fit)))
+fit.cont <- contrasts.fit(fit, contr)
+e.fit.cont <- eBayes(fit.cont)
+top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
+keep <- tibble::rownames_to_column(top.table, "genes") 
+host_only_degs_NOvsMODERATE_block_logF = keep[,c(1,2)]
+head (host_only_degs_NOvsMODERATE_block_logF) 
+
+host_kogmwu_data = host_only_degs_NOvsMODERATE_block_logF
+row.names(host_kogmwu_data)=NULL 
+kog_NOvsMODERATE_host = kog.mwu(host_kogmwu_data, host_gene2kog, Alternative = "t")
+kog_NOvsMODERATE_host                       
+             
+                       
+################################
+##### Symbiodiniaceae comparisons
+                       
+load ("./cladocopium_filtered2.R.data")
+load ("./cladocopium_gene2kog.R.data")                      
+                       
+treatment_s <- cladocopium_filtered2$samples$treatment
+treatment_s <- factor(treatment_s)
+time_s <- cladocopium_filtered2$samples$time
+time_s <- factor(time_s)
+group_s <- interaction(treatment_s, time_s)
+group_s
+group_s <- factor(group_s)
+genotype_s <- cladocopium_filtered2$samples$genotype
+genotype_s <- factor(genotype_s)
+mm_s <- model.matrix(~0 + group_s)
+v_s <- voom(cladocopium_filtered2, mm_s, plot = T)
+cor_s <- duplicateCorrelation(v_s, mm_s, block=genotype_s)
+fit_s <- lmFit(object=v_s, design=mm_s, 
+             block=genotype_s, correlation=cor_s$consensus.correlation)
+head(coef(fit_s))                       
+       
+                       
+#### SYMB no stress vs low stress
+                       
+contr_s <- makeContrasts(group_sHeat.T2 - (group_sHeat.T0 + group_sAmbient.T0 + group_sAmbient.T2)/3,
+                       levels = colnames(coef(fit_s)))
+fit.cont_s <- contrasts.fit(fit_s, contr_s)
+e.fit.cont_s <- eBayes(fit.cont_s)
+top.table_s <- topTable(e.fit.cont_s, sort.by = "P", n = Inf)
+keep_s <- tibble::rownames_to_column(top.table_s, "genes") 
+cladocopium_only_degs_NOvsLOW_block_logF = keep_s[,c(1,2)] 
+head (cladocopium_only_degs_NOvsLOW_block_logF)
+
+cladocopium_kogmwu_data = cladocopium_only_degs_NOvsLOW_block_logF
+row.names(cladocopium_kogmwu_data)=NULL 
+kog_NOvsLOW_s = kog.mwu(cladocopium_kogmwu_data, cladocopium_gene2kog, Alternative = "t")
+kog_NOvsLOW_s                       
+                       
+                       
+#### SYMB no stress vs moderate stress 
+                       
+contr_s <- makeContrasts(group_sHeat.T4 - (group_sHeat.T0 + group_sAmbient.T0 + group_sAmbient.T2 + group_sAmbient.T4)/4,
+                       levels = colnames(coef(fit_s)))
+fit.cont_s <- contrasts.fit(fit_s, contr_s)
+e.fit.cont_s <- eBayes(fit.cont_s)
+top.table_s <- topTable(e.fit.cont_s, sort.by = "P", n = Inf)
+keep_s <- tibble::rownames_to_column(top.table_s, "genes")
+cladocopium_only_degs_NOvsMODERATE_block_logF = keep_s[,c(1,2)]
+head (cladocopium_only_degs_NOvsMODERATE_block_logF)
+
+cladocopium_kogmwu_data = cladocopium_only_degs_NOvsMODERATE_block_logF
+row.names(cladocopium_kogmwu_data)=NULL 
+kog_NOvsMODERATE_s = kog.mwu(cladocopium_kogmwu_data, cladocopium_gene2kog, Alternative = "t")
+kog_NOvsMODERATE_s                      
+                       
+                       
+################################
+##### KOG plots
+
+### heatmap                       
+#compiling a table of delta-ranks to compare the results
+ktable1=makeDeltaRanksTable(list("host NO-LOW"=kog_NOvsLOW_host, "host NO-MODERATE"=kog_NOvsMODERATE_host, "symb NO-LOW"=kog_NOvsLOW_s, "symb NO-MODERATE"=kog_NOvsMODERATE_s))
+ktable <- ktable1 %>% subset(rownames(ktable1) !="S") %>% droplevels() #remove genes associated with Function unknown (S)                       
+pheatmap(as.matrix(ktable),clustering_distance_cols="correlation") # heatmap with hierarchical clustering trees  
+#I want to replace symbol KOG catgories with full class names                      
+kog_map <- read.csv("./kog_classes.txt", sep = '\t', header=FALSE)                      
+ktable2 <- ktable%>% rownames_to_column("V1")
+for_map <- left_join(ktable2, kog_map, by = "V1")
+rownames(ktable) == for_map$V1 #check they match                       
+pheatmap(as.matrix(ktable),clustering_distance_cols="correlation", labels_row=for_map$V2) #with KOG class full names         
+                       
+### correlations
+                       
+                       
+                       
