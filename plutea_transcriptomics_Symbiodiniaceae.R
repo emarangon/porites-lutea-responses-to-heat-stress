@@ -16,7 +16,7 @@
 
 ###import files
 
-files <- dir(path = "13_mapping_plutea_UQ_cladocopium_goreaui_results", pattern = "*plutea_UQ_cladocopium_goreaui_relaxed_ReadsPerGene_StrandnessReverse.out.tab", full.names = T) 
+files <- dir(path = "./13_mapping_plutea_UQ_cladocopium_goreaui_results", pattern = "*plutea_UQ_cladocopium_goreaui_relaxed_ReadsPerGene_StrandnessReverse.out.tab", full.names = T) 
 
 cladocopium_counts1 <- files %>% purrr::map(read_tsv,  col_names = TRUE ) %>%
   purrr::reduce(cbind)
@@ -44,7 +44,7 @@ head (cladocopium_counts)
 
 ###convert into DEGList object
 
-cladocopium_samples <- read_tsv("SampleInfo_plutea.txt") #metadata
+cladocopium_samples <- read_tsv("./SampleInfo_plutea.txt") #metadata
 cladocopium_samples1<- subset (cladocopium_samples, sample_id != "P4.31" & sample_id != "P3.33" & sample_id != "P3.18") #filtering out samples (see above)
 #it is very important to make sure the metadata is in the same order as the column names of the counts table !!!
 gn <- cladocopium_counts %>% dplyr::select (-"gene_plutea_cladocopium") #Just removing first gene column to be able to compare samples in the next step
@@ -160,8 +160,8 @@ combined1234 <- dplyr::bind_rows(combined123, fourth)
 cladocopium_gene2kog <- dplyr::bind_rows(combined1234, fifth) #Two-column dataframe of gene annotations: gene id, KOG class
 head(cladocopium_gene2kog)                       
 
-save(cladocopium_filtered2, file = "cladocopium_filtered2.R.data")
-save(cladocopium_gene2kog, file = "cladocopium_gene2kog.R.data")   
+save(cladocopium_filtered2, file = "./cladocopium_filtered2.R.data")
+save(cladocopium_gene2kog, file = "./cladocopium_gene2kog.R.data")   
                        
 #CONTINUATION KOG ANALYSES IS IN plutea_transcriptomics_host.R
                        
@@ -170,9 +170,235 @@ save(cladocopium_gene2kog, file = "cladocopium_gene2kog.R.data")
 ###########################################################################
 #################### GO enrichment analyses (GO_MWU) ######################
 ###########################################################################
+#following https://github.com/z0on/GO_MWU/blob/master/GO_MWU.R                       
                        
 cladocopium_annotations <- read.csv("./eggNOG_output_cladocopium_annotation_ALLgo.tsv", sep = '\t', header=TRUE)
 cladocopium_annotations_GO = cladocopium_annotations[,c(1, 10)] #keep only gene and GO        
 cladocopium_annotations_GO$GOs <- gsub(',', ';', cladocopium_annotations_GO$GOs) #for GO_MWU, string of concatenated GO terms separates by semicolons                       
 cladocopium_annotations_GO$GOs <- gsub('-', 'unknown', cladocopium_annotations_GO$GOs) #for GO_MWU, the genes without annotation should be called "unknown", if you want to analyze these too
-cladocopium_annotations_GO$query <- gsub (".mRNA1", "", as.character(cladocopium_annotations_GO$query)) #editing gene names to match my reads                       
+cladocopium_annotations_GO$query <- gsub (".mRNA1", "", as.character(cladocopium_annotations_GO$query)) #editing gene names to match my reads      
+
+#################                     
+###LogFC between no stress and moderate
+treatment <- cladocopium_filtered2$samples$treatment
+treatment <- factor(treatment)
+time <- cladocopium_filtered2$samples$time
+time <- factor(time)
+group <- interaction(treatment, time)
+group
+group <- factor(group)
+genotype <- cladocopium_filtered2$samples$genotype
+genotype <- factor(genotype)
+mm <- model.matrix(~0 + group)
+v <- voom(cladocopium_filtered2, mm, plot = T)
+cor <- duplicateCorrelation(v, mm, block=genotype)
+fit <- lmFit(object=v, design=mm, 
+             block=genotype, correlation=cor$consensus.correlation)
+head(coef(fit))
+contr <- makeContrasts(groupHeat.T4 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2 + groupAmbient.T4)/4,
+                       levels = colnames(coef(fit)))
+contr
+fit.cont <- contrasts.fit(fit, contr)
+e.fit.cont <- eBayes(fit.cont)
+top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
+keep <- tibble::rownames_to_column(top.table, "genes")
+cladocopium_genes_HT4vsAll_block_logF = keep[,c(1,2)] #keep only first and 2nd column
+#save as 'cladocopium_genes_HT4vsAll_block_logFC.csv'                        
+
+                       
+################# BP              
+input="cladocopium_genes_HT4vsAll_block_logFC.csv"
+goAnnotations="cladocopium_annotations_genome_GO.tab"
+goDatabase="gene_ontology_OBO_June22.obo"
+goDivision="BP" #biological processes
+source("gomwu.functions.R")                      
+
+ # ------------- Calculating stats
+# It might take a few minutes for MF and BP. Do not rerun it if you just want to replot the data with different cutoffs, go straight to gomwuPlot. If you change any of the numeric values below, delete the files that were generated in previos runs first.
+
+gomwuStats(input, goDatabase, goAnnotations, goDivision,
+           perlPath="perl", # perl path usr/bin/perl
+           largest=0.1,  # a GO category will not be considered if it contains more than this fraction of the total number of genes
+           smallest=5,   # a GO category should contain at least this many genes to be considered
+           clusterCutHeight=0.25, # threshold for merging similar (gene-sharing) terms. See README for details.
+           #	Alternative="g" # by default the MWU test is two-tailed; specify "g" or "l" of you want to test for "greater" or "less" instead. 
+           #	Module=TRUE,Alternative="g" # un-remark this if you are analyzing a SIGNED WGCNA module (values: 0 for not in module genes, kME for in-module genes). In the call to gomwuPlot below, specify absValue=0.001 (count number of "good genes" that fall into the module)
+           #	Module=TRUE # un-remark this if you are analyzing an UNSIGNED WGCNA module 
+)
+# do not continue if the printout shows that no GO terms pass 10% FDR.
+
+# ----------- Plotting results
+
+quartz()
+results=gomwuPlot(input,goAnnotations,goDivision,
+                  #absValue=-log(0.05,10),  # genes with the measure value exceeding this will be counted as "good genes". This setting is for signed log-pvalues. Specify absValue=0.001 if you are doing Fisher's exact test for standard GO enrichment or analyzing a WGCNA module (all non-zero genes = "good genes").
+                  absValue=1, # un-remark this if you are using log2-fold changes
+                  level1=0.05, # FDR threshold for plotting. Specify level1=1 to plot all GO categories containing genes exceeding the absValue.
+                  level2=0.01, # FDR cutoff to print in regular (not italic) font.
+                  level3=0.001, # FDR cutoff to print in large bold font.
+                  txtsize=1.2,    # decrease to fit more on one page, or increase (after rescaling the plot so the tree fits the text) for better "word cloud" effect
+                  treeHeight=0.5, # height of the hierarchical clustering tree
+                  colors=c("dodgerblue2","firebrick1","skyblue2","lightcoral") 
+)
+                    
+# text representation of results, with actual adjusted p-values
+results[[1]]
+BP_results <- results[[1]]
+write.csv(BP_results, "BP_graph_NOvsMODRATE.csv")
+
+                       
+                       
+################# MF              
+input="cladocopium_genes_HT4vsAll_block_logFC.csv"
+goAnnotations="cladocopium_annotations_genome_GO.tab"
+goDatabase="gene_ontology_OBO_June22.obo"
+goDivision="MF" #Molecular Function
+source("gomwu.functions.R")
+                       
+# ------------- Calculating stats
+# It might take a few minutes for MF and BP. Do not rerun it if you just want to replot the data with different cutoffs, go straight to gomwuPlot. If you change any of the numeric values below, delete the files that were generated in previos runs first.
+
+gomwuStats(input, goDatabase, goAnnotations, goDivision,
+           perlPath="perl", # perl path usr/bin/perl
+           largest=0.1,  # a GO category will not be considered if it contains more than this fraction of the total number of genes
+           smallest=5,   # a GO category should contain at least this many genes to be considered
+           clusterCutHeight=0.25, # threshold for merging similar (gene-sharing) terms. See README for details.
+           #	Alternative="g" # by default the MWU test is two-tailed; specify "g" or "l" of you want to test for "greater" or "less" instead. 
+           #	Module=TRUE,Alternative="g" # un-remark this if you are analyzing a SIGNED WGCNA module (values: 0 for not in module genes, kME for in-module genes). In the call to gomwuPlot below, specify absValue=0.001 (count number of "good genes" that fall into the module)
+           #	Module=TRUE # un-remark this if you are analyzing an UNSIGNED WGCNA module 
+)
+# do not continue if the printout shows that no GO terms pass 10% FDR.
+
+# ----------- Plotting results
+
+quartz()
+results=gomwuPlot(input,goAnnotations,goDivision,
+                  #absValue=-log(0.05,10),  # genes with the measure value exceeding this will be counted as "good genes". This setting is for signed log-pvalues. Specify absValue=0.001 if you are doing Fisher's exact test for standard GO enrichment or analyzing a WGCNA module (all non-zero genes = "good genes").
+                  absValue=1, # un-remark this if you are using log2-fold changes 
+                  level1=0.05, # FDR threshold for plotting. Specify level1=1 to plot all GO categories containing genes exceeding the absValue.
+                  level2=0.01, # FDR cutoff to print in regular (not italic) font.
+                  level3=0.001, # FDR cutoff to print in large bold font.
+                  txtsize=1.2,    # decrease to fit more on one page, or increase (after rescaling the plot so the tree fits the text) for better "word cloud" effect
+                  treeHeight=0.5, # height of the hierarchical clustering tree
+                  colors=c("dodgerblue2","firebrick1","skyblue2","lightcoral") # these are default colors, un-remar and change if needed
+)
+
+# text representation of results, with actual adjusted p-values
+results[[1]]
+MF_results <- results[[1]]
+write.csv(MF_results, "MF_graph_NOvsMODRATE.csv")                       
+                       
+
+                       
+#################                     
+###LogFC between no stress and low
+
+treatment <- cladocopium_filtered2$samples$treatment
+treatment <- factor(treatment)
+time <- cladocopium_filtered2$samples$time
+time <- factor(time)
+group <- interaction(treatment, time)
+group
+group <- factor(group)
+genotype <- cladocopium_filtered2$samples$genotype
+genotype <- factor(genotype)
+mm <- model.matrix(~0 + group)
+v <- voom(cladocopium_filtered2, mm, plot = T)
+cor <- duplicateCorrelation(v, mm, block=genotype)
+fit <- lmFit(object=v, design=mm, 
+             block=genotype, correlation=cor$consensus.correlation)
+head(coef(fit))
+contr <- makeContrasts(groupHeat.T2 - (groupHeat.T0 + groupAmbient.T0 + groupAmbient.T2)/3,
+                       levels = colnames(coef(fit)))
+contr
+fit.cont <- contrasts.fit(fit, contr)
+e.fit.cont <- eBayes(fit.cont)
+top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
+keep <- tibble::rownames_to_column(top.table, "genes") 
+cladocopium_genes_HT2vsAll_block_logF = keep[,c(1,2)] #keep only first and 2nd column
+head (cladocopium_genes_HT2vsAll_block_logF)
+#save as 'cladocopium_genes_HT2vsAll_block_logFC.csv' 
+  
+                       
+################# BP
+input="cladocopium_genes_HT2vsAll_block_logFC.csv"
+goAnnotations="cladocopium_annotations_genome_GO.tab"
+goDatabase="gene_ontology_OBO_June22.obo"
+goDivision="BP" #biological processes
+source("gomwu.functions.R")
+                       
+# ------------- Calculating stats
+# It might take a few minutes for MF and BP. Do not rerun it if you just want to replot the data with different cutoffs, go straight to gomwuPlot. If you change any of the numeric values below, delete the files that were generated in previos runs first.
+
+gomwuStats(input, goDatabase, goAnnotations, goDivision,
+           perlPath="perl", # perl path usr/bin/perl
+           largest=0.1,  # a GO category will not be considered if it contains more than this fraction of the total number of genes
+           smallest=5,   # a GO category should contain at least this many genes to be considered
+           clusterCutHeight=0.25, # threshold for merging similar (gene-sharing) terms. See README for details.
+           #	Alternative="g" # by default the MWU test is two-tailed; specify "g" or "l" of you want to test for "greater" or "less" instead. 
+           #	Module=TRUE,Alternative="g" # un-remark this if you are analyzing a SIGNED WGCNA module (values: 0 for not in module genes, kME for in-module genes). In the call to gomwuPlot below, specify absValue=0.001 (count number of "good genes" that fall into the module)
+           #	Module=TRUE # un-remark this if you are analyzing an UNSIGNED WGCNA module 
+)
+# do not continue if the printout shows that no GO terms pass 10% FDR.
+
+# ----------- Plotting results
+
+quartz()
+results=gomwuPlot(input,goAnnotations,goDivision,
+                  #absValue=-log(0.05,10),  # genes with the measure value exceeding this will be counted as "good genes". This setting is for signed log-pvalues. Specify absValue=0.001 if you are doing Fisher's exact test for standard GO enrichment or analyzing a WGCNA module (all non-zero genes = "good genes").
+                  absValue=1, # un-remark this if you are using log2-fold changes 
+                  level1=0.05, # FDR threshold for plotting. Specify level1=1 to plot all GO categories containing genes exceeding the absValue.
+                  level2=0.01, # FDR cutoff to print in regular (not italic) font.
+                  level3=0.001, # FDR cutoff to print in large bold font.
+                  txtsize=1.2,    # decrease to fit more on one page, or increase (after rescaling the plot so the tree fits the text) for better "word cloud" effect
+                  treeHeight=0.5, # height of the hierarchical clustering tree
+                  colors=c("dodgerblue2","firebrick1","skyblue2","lightcoral") # these are default colors, un-remar and change if needed
+)
+
+# text representation of results, with actual adjusted p-values
+results[[1]]
+BP_results <- results[[1]]
+write.csv(BP_results, "BP_graph_NOvsLOW.csv")     
+                       
+                       
+################# MF
+input="cladocopium_genes_HT2vsAll_block_logFC.csv"
+goAnnotations="cladocopium_annotations_genome_GO.tab"
+goDatabase="gene_ontology_OBO_June22.obo"
+goDivision="MF" #Molecular Function
+source("gomwu.functions.R")
+                       
+# ------------- Calculating stats
+# It might take a few minutes for MF and BP. Do not rerun it if you just want to replot the data with different cutoffs, go straight to gomwuPlot. If you change any of the numeric values below, delete the files that were generated in previos runs first.
+
+gomwuStats(input, goDatabase, goAnnotations, goDivision,
+           perlPath="perl", # perl path usr/bin/perl
+           largest=0.1,  # a GO category will not be considered if it contains more than this fraction of the total number of genes
+           smallest=5,   # a GO category should contain at least this many genes to be considered
+           clusterCutHeight=0.25, # threshold for merging similar (gene-sharing) terms. See README for details.
+           #	Alternative="g" # by default the MWU test is two-tailed; specify "g" or "l" of you want to test for "greater" or "less" instead. 
+           #	Module=TRUE,Alternative="g" # un-remark this if you are analyzing a SIGNED WGCNA module (values: 0 for not in module genes, kME for in-module genes). In the call to gomwuPlot below, specify absValue=0.001 (count number of "good genes" that fall into the module)
+           #	Module=TRUE # un-remark this if you are analyzing an UNSIGNED WGCNA module 
+)
+# do not continue if the printout shows that no GO terms pass 10% FDR.
+
+# ----------- Plotting results
+
+quartz()
+results=gomwuPlot(input,goAnnotations,goDivision,
+                  #absValue=-log(0.05,10),  # genes with the measure value exceeding this will be counted as "good genes". This setting is for signed log-pvalues. Specify absValue=0.001 if you are doing Fisher's exact test for standard GO enrichment or analyzing a WGCNA module (all non-zero genes = "good genes").
+                  absValue=1, # un-remark this if you are using log2-fold changes 
+                  level1=0.05, # FDR threshold for plotting. Specify level1=1 to plot all GO categories containing genes exceeding the absValue.
+                  level2=0.01, # FDR cutoff to print in regular (not italic) font.
+                  level3=0.001, # FDR cutoff to print in large bold font.
+                  txtsize=1.2,    # decrease to fit more on one page, or increase (after rescaling the plot so the tree fits the text) for better "word cloud" effect
+                  treeHeight=0.5, # height of the hierarchical clustering tree
+                  colors=c("dodgerblue2","firebrick1","skyblue2","lightcoral") # these are default colors, un-remar and change if needed
+)
+
+# text representation of results, with actual adjusted p-values
+results[[1]]
+MF_results <- results[[1]]
+write.csv(MF_results, "MF_graph_NOvsLOW.csv")                       
+                       
+                       
