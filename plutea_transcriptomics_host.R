@@ -293,7 +293,28 @@ for_map <- left_join(ktable2, kog_map, by = "V1")
 rownames(ktable) == for_map$V1 #check they match                       
 pheatmap(as.matrix(ktable),clustering_distance_cols="correlation", labels_row=for_map$V2) #with KOG class full names         
                        
-### correlations
+### correlations plot
+corrPlot(x="symb NO-LOW",y="symb NO-MODERATE",ktable)
+corrPlot(x="host NO-LOW",y="host NO-MODERATE",ktable)                       
                        
+                       
+
+                       
+                       
+###########################################################################
+#################### GO enrichment analyses (GO_MWU) ######################
+###########################################################################
+#following https://github.com/z0on/GO_MWU/blob/master/GO_MWU.R 
+                       
+host_annotations <- read.csv("./eggNOG_output_plutea_annotation_ALLgo.tsv", sep = '\t', header=TRUE)
+host_annotations_GO = host_annotations[,c(1, 10)] #keep only gene and GO   
+host_annotations_GO$GOs <- gsub(',', ';', host_annotations_GO$GOs) #for GO_MWU, string of concatenated GO terms separates by semicolons
+host_annotations_GO$GOs <- gsub('-', 'unknown', host_annotations_GO$GOs) #for GO_MWU, the genes without annotation should be called "unknown", if you want to analyze these too
+host_annotations_GO$query <- gsub (".m1", "", as.character(host_annotations_GO$query)) #editing gene names to match my reads      
+host_annotations_GO$query <- gsub (".model.", ".TU.", as.character(host_annotations_GO$query)) #editing gene names to match my reads                
+                       
+                       
+#################                     
+###LogFC between no stress and moderate                      
                        
                        
