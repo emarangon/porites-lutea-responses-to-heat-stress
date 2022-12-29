@@ -18,6 +18,7 @@ library(tidyverse) #includes ggplot2, dplyr, tibble, tidyR
 library(phyloseq) #microbial analyses
 library(edgeR) #transcriptomic analyses
 library(limma)  #transcriptomic analyses
+library (DESeq2) #for normalization transcriptomics for mixomics
 library(mixOmics) #intergrating omics data
 
 
@@ -123,4 +124,62 @@ rownames(data.offset_transf)
 ############################################################
 ### loading data ####
 
+###import files
+
+files <- dir(path = "./13_mapping_plutea_host_results", pattern = "*plutea_host_relaxed_ReadsPerGene_StrandnessReverse.out.tab", full.names = T) 
+
+host_counts1 <- files %>% purrr::map(read_tsv,  col_names = TRUE ) %>%
+  purrr::reduce(cbind)
+
+host_counts1 %>% head()
+names(host_counts1) <- gsub(x = names(host_counts1), pattern = "_", replacement = ".") 
+colnames(host_counts1)[1] <- "gene_plutea_host_1234567890" 
+host_counts1 <- host_counts1 %>%dplyr::select(-ends_with("id")) 
+names(host_counts1) <-  gsub('.{11}$', '', names(host_counts1)) 
+host_counts1 %>% head() 
+
+
+###filtering samples
+
+remove <- "P4.31" # because of QC
+host_counts2 <- host_counts1[, !(names(host_counts1) %in% remove)] #remove sample
+remove <- "P3.33" # because of QC
+host_counts3 <- host_counts2[, !(names(host_counts2) %in% remove)] #remove sample
+remove <- "P1.36" # because identified as outlier (WGCNA clustering)
+host_counts4 <- host_counts3[, !(names(host_counts3) %in% remove)] #remove sample
+remove <- "P1.19" # because identified as outlier (WGCNA clustering)
+host_counts5 <- host_counts4[, !(names(host_counts4) %in% remove)] #remove sample
+remove <- "P3.18" # because identified as outlier (WGCNA clustering) in Symbiodiniaceae samples
+host_counts <- host_counts5[, !(names(host_counts5) %in% remove)] #remove sample
+head (host_counts)
+#I'll use 31 samples (36-5) for downstream analyses
+
+
+###convert into DEGList object
+
+host_samples <- read_tsv("./SampleInfo_plutea.txt") #metadata
+host_samples1<- subset (host_samples, sample_id != "P4.31" & sample_id != "P3.33" & sample_id != "P1.19" & sample_id != "P1.36" & sample_id != "P3.18")
+gn <- host_counts %>% dplyr::select (-"gene_plutea_host")
+table(colnames(gn) == host_samples1$sample_id) #match
+
+host_counts_matrix <- host_counts %>%
+  dplyr::select(-gene_plutea_host) %>% 
+  as.matrix()
+row.names(host_counts_matrix) <- host_counts$gene_plutea_host 
+head (host_counts_matrix)
+
+host_DGE2 <- DGEList(host_counts_matrix, samples = host_samples1) #I have a tot of 31,126 genes (some have zero counts tho)
+
+
+###filtering genes
+
+table(rowSums(host_DGE2$counts==0)==31) #how many genes have zero counts across all 31 samples? 642
+host_filt <- filterByExpr(host_DGE2, design = model.matrix(~TreatTime + genotype, 
+                                                      data = host_DGE2$samples), min.count = 20)
+host_filtered1 <- host_DGE2[host_filt, , keep.lib.sizes = F]
+host_filtered1 #24,171 genes after filtering
+table(rowSums(host_filtered1$counts==0)==31) #how many genes have zero counts across all 31 samples? zero
+
+
+###normalization using DESeq2
 
