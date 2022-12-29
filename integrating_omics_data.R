@@ -21,6 +21,7 @@ library(limma)  #transcriptomic analyses
 library(mixOmics) #intergrating omics data
 
 
+
 #############################################################
 #################### 16S data (microbes) ####################
 
@@ -113,4 +114,13 @@ plotIndiv(pca.result, group = meta.data$TreatTime, legend=TRUE, legend.title = '
 
 data.offset_transf <- logratio.transfo(data.offset, logratio = 'CLR') ##STEP 2: TRANSFORMATION
 rownames(data.offset_transf)
+
+
+
+#############################################################
+#################### host RNA-seq (transcritpomics) ####################
+
+############################################################
+### loading data ####
+
 
