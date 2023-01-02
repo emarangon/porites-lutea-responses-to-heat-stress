@@ -20,7 +20,7 @@ library(edgeR) #transcriptomic analyses
 library(limma)  #transcriptomic analyses
 library (DESeq2) #for normalization transcriptomics for mixomics
 library(mixOmics) #intergrating omics data
-
+library(plyr) #calculate means etc for metadata
 
 
 #############################################################
@@ -181,5 +181,92 @@ host_filtered1 #24,171 genes after filtering
 table(rowSums(host_filtered1$counts==0)==31) #how many genes have zero counts across all 31 samples? zero
 
 
+#### physiology
+
+pr_porites <- read.csv("./PR_Porites.csv", header = TRUE)
+pr_porites1 <- dplyr::filter (pr_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4") #keep data points used for transcriptomics
+pr_porites2 <- pr_porites1 %>% dplyr::select (2, 9, 18, 19, 21) #select columns
+names(pr_porites2)[names(pr_porites2) == 'Sample.ID'] <- 'sample_id' #rename column Sample.ID
+bleaching_porites <- read.csv("./BleachingScores_porites.csv", header = TRUE)
+bleaching_porites1 <- dplyr::filter (bleaching_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4")
+bleaching_porites2 <- bleaching_porites1 %>% dplyr::select (3, 13, 32)
+names(bleaching_porites2)[names(bleaching_porites2) == 'Sample.ID'] <- 'sample_id' #rename column Sample.ID
+Light_1_filtered_sd <- read.csv("./Light_porites_filteringSD.csv", header = TRUE, sep=",")
+Light_2_filtered_sd <- unite(Light_1_filtered_sd, ID2, TimePoint:Light_Dark, remove=FALSE)
+Light_2_filtered_sd$ID2 <- as.factor(Light_2_filtered_sd$ID2)
+Light_3_filtered_sd <- unite(Light_2_filtered_sd, ID3, ID2:Sample_ID, remove=FALSE)
+Light_3_filtered_sd$ID3 <- as.factor(Light_3_filtered_sd$ID3)
+Light_4_filtered_sd <- unite(Light_3_filtered_sd, ID4, ID3:Tank, remove=FALSE)
+Light_4_filtered_sd$ID4 <- as.factor(Light_4_filtered_sd$ID4)
+Light_5_filtered_sd <- unite(Light_4_filtered_sd, ID5, ID4:Treatment, remove=FALSE)
+Light_5_filtered_sd$ID5 <- as.factor(Light_5_filtered_sd$ID5)
+Light_6_filtered_sd <- ddply(Light_5_filtered_sd,~ID5,summarise,meanY=mean(Y)) #to calculate Y means
+Light_7_filtered_sd <-Light_6_filtered_sd %>%
+  separate (ID5, c("TimePoint", "Light_Dark", "Sample_ID", "Tank", "Treatment"), "_") #to separate ID5 into multiple columns
+Light_7_filtered_sd$Tank <- as.factor(Light_7_filtered_sd$Tank)
+Light_7_filtered_sd$Light_Dark <- factor(Light_7_filtered_sd$Light_Dark)
+Light_7_filtered_sd$TimePoint <- factor(Light_7_filtered_sd$TimePoint)
+Light_7_filtered_sd$Treatment <- factor(Light_7_filtered_sd$Treatment)
+Light_7_filtered_sd$Sample_ID <- factor(Light_7_filtered_sd$Sample_ID)
+Light_7_filtered_sd$Parent = Light_7_filtered_sd$Sample_ID #copy column Sample_ID in an identical column called Parent
+Light_7_filtered_sd %>% mutate(Parent = substr(Parent, 1, 2)) -> photefficiency_porites #edit Parent column (I keep only the first two values)
+names(photefficiency_porites)[names(photefficiency_porites)=="meanY"] <- "PhotochemicalEfficiency" #rename 'mean' into 'PhotochemicalEfficiency'
+summary(photefficiency_porites)
+photefficiency_porites1 <- dplyr::filter (photefficiency_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4") 
+photefficiency_porites2 <- photefficiency_porites1 %>% dplyr::select (1, 3, 6)
+names(photefficiency_porites2)[names(photefficiency_porites2) == 'Sample_ID'] <- 'sample_id' #rename column Sample.ID
+meta_1 <- host_filtered1$samples
+meta_2<-  dplyr::left_join(meta_1, pr_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint')) #keep only samples used also for transcriptomics
+meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
+meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
+head(meta_df)
+
+
 ###normalization using DESeq2
+
+host_for_deseq <- host_filtered1$counts
+host_de_input = as.matrix(host_for_deseq)
+meta_df$TreatTime <- factor(meta_df$TreatTime)
+levels(meta_df$TreatTime)
+all.equal(colnames(host_de_input), meta_df$sample_id) # they match
+host_dds <- DESeqDataSetFromMatrix(round(host_de_input),
+                              meta_df,
+                              design = ~ TreatTime + genotype) 
+host_dds_norm <- vst(host_dds, blind=FALSE)
+
+
+#####I keep only genes with KEGG annotations
+
+host_annotations <- read.csv("./eggNOG_output_plutea_annotation_ALLgo.tsv", sep = '\t', header=TRUE)
+host_annotations$query <- gsub (".m1", "", as.character(host_annotations$query)) #to make data match
+host_annotations$query <- gsub (".model.", ".TU.", as.character(host_annotations$query)) #to make data match
+host_annotations_KEGG = host_annotations[,c(1, 12)] #keep only gene and ko columns
+dim (host_annotations_KEGG)
+host_genes_to_keep <- host_annotations_KEGG[!grepl("-", host_annotations_KEGG$KEGG_ko),] #remove unknown pathways
+host_m <- assay (host_dds_norm) 
+dim (host_m)
+host_d <- as.data.frame(host_m) %>% rownames_to_column("query")
+X_host_df_FINAL_only_annotated <- semi_join(host_d, host_genes_to_keep, by = "query") #filterig out
+dim (X_host_df_FINAL_only_annotated)
+X_host <- X_host_df_FINAL_only_annotated %>% column_to_rownames("query") %>% as.matrix() %>% t
+
+
+### filtering samples
+
+rownames (X_host)
+rownames(X_host) <- c(220,240,312, 297, 
+                      184, 190, 286, 234,
+                      135, 210, 266, 216,
+                      263, 200, 142, 152,
+                      231, 179, 140, 284,
+                      180, 136, 177, 211,
+                      315, 173, 199, 178,
+                      202, 318, 242) 
+order <- c("135", "136", "140", "142", "152", "173", "177", "178", "179", "180", "184", "190", "199", "200", "202", "210", "211", "216", "220", "231", "234", "240", "242", "263", "266", "284", "286", "297", "312", "315", "318")
+X_host_df <- as.data.frame(X_host) %>% rownames_to_column("sample")
+X_host_df$sample <- as.factor(X_host_df$sample)
+X_host_df_final <- X_host_df[match(order, X_host_df$sample),] %>% remove_rownames() %>% column_to_rownames("sample") #reordering datasets
+dim(X_host_df_final) #12435 genes
+
+
 
