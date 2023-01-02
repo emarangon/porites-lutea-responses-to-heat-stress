@@ -145,9 +145,9 @@ remove <- "P4.31" # because of QC
 host_counts2 <- host_counts1[, !(names(host_counts1) %in% remove)] #remove sample
 remove <- "P3.33" # because of QC
 host_counts3 <- host_counts2[, !(names(host_counts2) %in% remove)] #remove sample
-remove <- "P1.36" # because identified as outlier (WGCNA clustering)
+remove <- "P1.36" # because identified as outlier (WGCNA clustering) in host samples
 host_counts4 <- host_counts3[, !(names(host_counts3) %in% remove)] #remove sample
-remove <- "P1.19" # because identified as outlier (WGCNA clustering)
+remove <- "P1.19" # because identified as outlier (WGCNA clustering) in host samples
 host_counts5 <- host_counts4[, !(names(host_counts4) %in% remove)] #remove sample
 remove <- "P3.18" # because identified as outlier (WGCNA clustering) in Symbiodiniaceae samples
 host_counts <- host_counts5[, !(names(host_counts5) %in% remove)] #remove sample
@@ -266,7 +266,137 @@ order <- c("135", "136", "140", "142", "152", "173", "177", "178", "179", "180",
 X_host_df <- as.data.frame(X_host) %>% rownames_to_column("sample")
 X_host_df$sample <- as.factor(X_host_df$sample)
 X_host_df_final <- X_host_df[match(order, X_host_df$sample),] %>% remove_rownames() %>% column_to_rownames("sample") #reordering datasets
-dim(X_host_df_final) #12435 genes
+dim(X_host_df_final) #12,435 genes
+
+
+
+
+###################################################################################
+#################### Symbiodiniaceae RNA-seq (transcriptomics) ####################
+
+############################################################
+### loading data ####
+
+###import files
+
+files_symb <- dir(path = "./13_mapping_plutea_UQ_cladocopium_goreaui_results", pattern = "*plutea_UQ_cladocopium_goreaui_relaxed_ReadsPerGene_StrandnessReverse.out.tab", full.names = T) 
+cladocopium_counts1 <- files_symb %>% purrr::map(read_tsv,  col_names = TRUE ) %>%
+  purrr::reduce(cbind)
+names(cladocopium_counts1) <- gsub(x = names(cladocopium_counts1), pattern = "_", replacement = ".")
+colnames(cladocopium_counts1)[1] <- "gene_plutea_cladocopium_1234567890" 
+cladocopium_counts1 <- cladocopium_counts1 %>%dplyr::select(-ends_with("id")) 
+names(cladocopium_counts1) <-  gsub('.{11}$', '', names(cladocopium_counts1)) 
+
+
+###filtering samples
+
+remove <- "P4.31" # because of QC
+cladocopium_counts2 <- cladocopium_counts1[, !(names(cladocopium_counts1) %in% remove)] #remove sample
+remove <- "P3.33" # because of QC
+cladocopium_counts3 <- cladocopium_counts2[, !(names(cladocopium_counts2) %in% remove)] #remove sample
+remove <- "P1.36" # because identified as outlier (WGCNA clustering) in host samples
+cladocopium_counts4 <- cladocopium_counts3[, !(names(cladocopium_counts3) %in% remove)] #remove sample
+remove <- "P1.19"  # because identified as outlier (WGCNA clustering) in host samples
+cladocopium_counts5 <- cladocopium_counts4[, !(names(cladocopium_counts4) %in% remove)] #remove sample
+remove <- "P3.18" # because identified as outlier (WGCNA clustering) in Symbiodiniaceae samples
+cladocopium_counts <- cladocopium_counts5[, !(names(cladocopium_counts5) %in% remove)] #remove sample
+head (cladocopium_counts)
+#I'll use 31 samples (36-5) for downstream analyses
+
+
+###convert into DEGList object
+
+cladocopium_samples <- read_tsv("./SampleInfo_plutea.txt") #metadata
+cladocopium_samples1<- subset (cladocopium_samples, sample_id != "P4.31" & sample_id != "P3.33" & sample_id != "P3.18" & sample_id != "P1.19" & sample_id != "P1.36")
+gn <- cladocopium_counts %>% dplyr::select (-"gene_plutea_cladocopium")
+table(colnames(gn) == cladocopium_samples1$sample_id) #they match
+
+cladocopium_counts_matrix <- cladocopium_counts %>%
+  dplyr::select(-gene_plutea_cladocopium) %>% #remove gene_plutea_cladocopium
+  as.matrix()
+row.names(cladocopium_counts_matrix) <- cladocopium_counts$gene_plutea_cladocopium #add gene_plutea_cladocopium
+head (cladocopium_counts_matrix)
+
+cladocopium_DGE2 <- DGEList(cladocopium_counts_matrix, samples = cladocopium_samples1) #I have a tot of 39,006 genes (some have zero counts tho)
+
+
+###filtering genes
+
+table(rowSums(cladocopium_DGE2$counts==0)==31) #how many genes have zero counts across all 33 samples? 9836
+filt <- filterByExpr(cladocopium_DGE2, design = model.matrix(~TreatTime + genotype, 
+                                                             data = cladocopium_DGE2$samples), min.count = 20)
+cladocopium_filtered1 <- cladocopium_DGE2[filt, , keep.lib.sizes = F]
+cladocopium_filtered1 #23,810 genes after filtering
+table(rowSums(cladocopium_filtered1$counts==0)==31) #how many genes have zero counts across all 31 samples? zero
+
+
+###normalization using DESeq2
+
+cladocopium_for_deseq <- cladocopium_filtered1$counts
+cladocopium_de_input = as.matrix(cladocopium_for_deseq)
+meta_df$TreatTime <- factor(meta_df$TreatTime)
+levels(meta_df$TreatTime)
+all.equal(colnames(cladocopium_de_input), meta_df$sample_id) #they match
+cladocopium_dds <- DESeqDataSetFromMatrix(round(cladocopium_de_input),
+                                   meta_df,
+                                   design = ~ TreatTime + genotype)
+cladocopium_dds_norm <- vst(cladocopium_dds, blind = FALSE)
+
+
+#####I keep only genes with KEGG annotations
+
+cladocopium_annotations <- read.csv("./eggNOG_output_cladocopium_annotation_ALLgo.tsv", sep = '\t', header=TRUE)
+cladocopium_annotations$query <- gsub (".mRNA1", "", as.character(cladocopium_annotations$query)) #to make data match
+cladocopium_annotations_KEGG = cladocopium_annotations[,c(1, 12)] #keep only gen and ko columns
+dim(cladocopium_annotations_KEGG)
+cladocopium_genes_to_keep <- cladocopium_annotations_KEGG[!grepl("-", cladocopium_annotations_KEGG$KEGG_ko),] #remove unknown pathways
+dim(cladocopium_genes_to_keep)
+cladocopium_m <- assay (cladocopium_dds_norm) 
+dim (cladocopium_m)
+cladocopium_d <- as.data.frame(cladocopium_m) %>% rownames_to_column("query")
+dim(cladocopium_d)
+X_cladocopium_df_FINAL_only_annotated <- semi_join(cladocopium_d, cladocopium_genes_to_keep, by = "query") #filterig out
+dim (X_cladocopium_df_FINAL_only_annotated)
+X_cladocopium <- X_cladocopium_df_FINAL_only_annotated %>% column_to_rownames("query") %>% as.matrix() %>% t
+rownames (X_cladocopium)
+rownames(X_cladocopium) <- c(220,240,312, 297, 
+                      184, 190, 286, 234,
+                      135, 210, 266, 216,
+                      263, 200, 142, 152,
+                      231, 179, 140, 284,
+                      180, 136, 177, 211,
+                      315, 173, 199, 178,
+                      202, 318, 242) 
+order <- c("135", "136", "140", "142", "152", "173", "177", "178", "179", "180", "184", "190", "199", "200", "202", "210", "211", "216", "220", "231", "234", "240", "242", "263", "266", "284", "286", "297", "312", "315", "318")
+X_cladocopium_df <- as.data.frame(X_cladocopium) %>% rownames_to_column("sample")
+X_cladocopium_df$sample <- as.factor(X_cladocopium_df$sample)
+X_cladocopium_df_final <- X_cladocopium_df[match(order, X_cladocopium_df$sample),] %>% remove_rownames() %>% column_to_rownames("sample") #reordering datasets
+dim(X_cladocopium_df_final) #7,627 genes
+
+
+
+
+############# ############# ############# ############# ############# ############# ############# ############# 
+############# ############# MULTILEVEL canonical sPLS (two datasets: RNA host and RNA symb)  ############# ########
+############# ############# ############# ############# ############# ############# ############# ############# 
+
+X<- as.data.frame(X_host_df_final) #RNA host
+Y <- as.data.frame(X_cladocopium_df_final) #RNA Symbiodiniaceae
+rownames (Y)
+head(Y)
+dim(Y)
+dim(X)
+design <- data.frame(sample = meta.data$genotype)
+summary(as.factor(meta.data$genotype))
+
+#data exploration
+pca.gene.host <- pca(X, ncomp = 10, center = TRUE, scale = TRUE)
+pca.gene.symb <- pca(Y, ncomp = 10, center = TRUE, scale = TRUE) 
+plot(pca.gene.host)
+plot(pca.gene.symb)
+
+
+
 
 
 
