@@ -460,7 +460,7 @@ cladocopium_dds <- DESeqDataSetFromMatrix(round(cladocopium_de_input), #to conve
                                           meta_df,
                                           design = ~1) #I am not specyfing a model here
 class(cladocopium_dds) #DESeqDataSet object
-cladocopium_dds_norm <- vst(cladocopium_dds)
+cladocopium_dds_norm <- vst(cladocopium_dds) #normalize and transform
 
 X_cladocopium <- assay (cladocopium_dds_norm) %>% t
 dim(X_cladocopium)
@@ -491,7 +491,7 @@ pca.multilevel.result
 plotIndiv(pca.multilevel.result, 
           group = meta_df$stress, legend=TRUE, legend.title = 'Heat stress', 
           pch = as.factor(meta_df$genotype), legend.title.pch = 'Parental colony',
-          title = 'MULTILEVEL PCA plutea cladocopium sample plot', col.per.group = Colors) #plot the samples                      
+          title = 'MULTILEVEL PCA plutea cladocopium sample plot', col.per.group = Colors)                  
                        
                        
 ###multilevel sPlS-DA (following http://mixomics.org/case-studies/multilevel-vac18-case-study/)  
