@@ -442,7 +442,7 @@ summary(photefficiency_porites)
 photefficiency_porites1 <- dplyr::filter (photefficiency_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4") 
 photefficiency_porites2 <- photefficiency_porites1 %>% dplyr::select (1, 3, 6)
 names(photefficiency_porites2)[names(photefficiency_porites2) == 'Sample_ID'] <- 'sample_id' #rename column Sample.ID
-meta_1 <- host_filtered1$samples
+meta_1 <- cladocopium_filtered1$samples
 meta_2<-  dplyr::left_join(meta_1, pr_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint')) #keep only samples used also for transcriptomics
 meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
 meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
