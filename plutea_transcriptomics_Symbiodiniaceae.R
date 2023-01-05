@@ -402,3 +402,97 @@ MF_results <- results[[1]]
 write.csv(MF_results, "MF_graph_NOvsLOW.csv")                       
                        
                        
+
+                       
+###########################################################################
+#################### mixOmics analyses ######################
+###########################################################################
+  
+###importing physiology measures
+                       
+pr_porites <- read.csv("./PR_Porites.csv", header = TRUE)
+pr_porites1 <- dplyr::filter (pr_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4") #keep data points used for transcriptomics
+pr_porites2 <- pr_porites1 %>% dplyr::select (2, 9, 18, 19, 21) #select columns
+names(pr_porites2)[names(pr_porites2) == 'Sample.ID'] <- 'sample_id' #rename column Sample.ID
+bleaching_porites <- read.csv("./BleachingScores_porites.csv", header = TRUE)
+bleaching_porites1 <- dplyr::filter (bleaching_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4")
+bleaching_porites2 <- bleaching_porites1 %>% dplyr::select (3, 13, 32)
+names(bleaching_porites2)[names(bleaching_porites2) == 'Sample.ID'] <- 'sample_id' #rename column Sample.ID
+Light_1_filtered_sd <- read.csv("./Light_porites_filteringSD.csv", header = TRUE, sep=",")
+Light_2_filtered_sd <- unite(Light_1_filtered_sd, ID2, TimePoint:Light_Dark, remove=FALSE)
+Light_2_filtered_sd$ID2 <- as.factor(Light_2_filtered_sd$ID2)
+Light_3_filtered_sd <- unite(Light_2_filtered_sd, ID3, ID2:Sample_ID, remove=FALSE)
+Light_3_filtered_sd$ID3 <- as.factor(Light_3_filtered_sd$ID3)
+Light_4_filtered_sd <- unite(Light_3_filtered_sd, ID4, ID3:Tank, remove=FALSE)
+Light_4_filtered_sd$ID4 <- as.factor(Light_4_filtered_sd$ID4)
+Light_5_filtered_sd <- unite(Light_4_filtered_sd, ID5, ID4:Treatment, remove=FALSE)
+Light_5_filtered_sd$ID5 <- as.factor(Light_5_filtered_sd$ID5)
+Light_6_filtered_sd <- ddply(Light_5_filtered_sd,~ID5,summarise,meanY=mean(Y)) #to calculate Y means
+Light_7_filtered_sd <-Light_6_filtered_sd %>%
+  separate (ID5, c("TimePoint", "Light_Dark", "Sample_ID", "Tank", "Treatment"), "_") #to separate ID5 into multiple columns
+Light_7_filtered_sd$Tank <- as.factor(Light_7_filtered_sd$Tank)
+Light_7_filtered_sd$Light_Dark <- factor(Light_7_filtered_sd$Light_Dark)
+Light_7_filtered_sd$TimePoint <- factor(Light_7_filtered_sd$TimePoint)
+Light_7_filtered_sd$Treatment <- factor(Light_7_filtered_sd$Treatment)
+Light_7_filtered_sd$Sample_ID <- factor(Light_7_filtered_sd$Sample_ID)
+Light_7_filtered_sd$Parent = Light_7_filtered_sd$Sample_ID #copy column Sample_ID in an identical column called Parent
+Light_7_filtered_sd %>% mutate(Parent = substr(Parent, 1, 2)) -> photefficiency_porites #edit Parent column (I keep only the first two values)
+names(photefficiency_porites)[names(photefficiency_porites)=="meanY"] <- "PhotochemicalEfficiency" #rename 'mean' into 'PhotochemicalEfficiency'
+summary(photefficiency_porites)
+photefficiency_porites1 <- dplyr::filter (photefficiency_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4") 
+photefficiency_porites2 <- photefficiency_porites1 %>% dplyr::select (1, 3, 6)
+names(photefficiency_porites2)[names(photefficiency_porites2) == 'Sample_ID'] <- 'sample_id' #rename column Sample.ID
+meta_1 <- host_filtered1$samples
+meta_2<-  dplyr::left_join(meta_1, pr_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint')) #keep only samples used also for transcriptomics
+meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
+meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
+head(meta_df)                       
+                       
+                       
+###normalization for mixOmics
+                       
+cladocopium_for_deseq <- cladocopium_filtered1$counts
+cladocopium_de_input = as.matrix(cladocopium_for_deseq)
+meta_df$stress <- factor (meta_df$stress)
+levels(meta_df$stress)
+all.equal(colnames(cladocopium_de_input), meta_df$sample_id) #check they match
+cladocopium_dds <- DESeqDataSetFromMatrix(round(cladocopium_de_input), #to convert values to integers, returns a matrix
+                                          meta_df,
+                                          design = ~1) #I am not specyfing a model here
+class(cladocopium_dds) #DESeqDataSet object
+cladocopium_dds_norm <- vst(cladocopium_dds)
+
+X_cladocopium <- assay (cladocopium_dds_norm) %>% t
+dim(X_cladocopium)
+X <- X_cladocopium                      
+
+ 
+###PCA
+                       
+tune_pca<- tune.pca(X, ncomp = 10, center = TRUE, scale = FALSE)
+plot(tune_pca) #4 components seem to explain most of the variance from the data
+pca.result <- pca(X, ncomp = 4, center = TRUE, scale = FALSE)
+pca.result #results
+Colors <- c(
+  "#ECBE92", "#F7794D", "#B3B4B4")
+plotIndiv(pca.result, 
+          group = meta_df$stress, legend=TRUE, legend.title = 'Heat stress', 
+          pch = as.factor(meta_df$genotype), legend.title.pch = 'Parental colony',
+          title = 'PCA plutea cldocopium sample plot', style = 'ggplot2',
+          ellipse = FALSE, col.per.group = Colors)                        
+     
+                       
+ ###multilevel PCA (to account for effect of parental colony)
+  
+design <- data.frame(sample = meta_df$genotype) #repeated measures are accounted for (parental colony in my case)
+pca.multilevel.result <- pca(X, ncomp = 4, scale = FALSE, center = TRUE, 
+                             multilevel = design)
+pca.multilevel.result
+plotIndiv(pca.multilevel.result, 
+          group = meta_df$stress, legend=TRUE, legend.title = 'Heat stress', 
+          pch = as.factor(meta_df$genotype), legend.title.pch = 'Parental colony',
+          title = 'MULTILEVEL PCA plutea cladocopium sample plot', col.per.group = Colors) #plot the samples                      
+                       
+                       
+                       
+                       
