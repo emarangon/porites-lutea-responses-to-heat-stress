@@ -626,3 +626,53 @@ plotIndiv(pca.multilevel.result,
           title = 'MULTILEVEL PCA plutea host sample plot', col.per.group = Colors)                       
                        
                        
+###multilevel sPlS-DA (following http://mixomics.org/case-studies/multilevel-vac18-case-study/)  
+
+dim(X)
+Y <- as.factor(meta_df$stress)
+summary(Y)  
+host.splsda.stress <- splsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance                       
+perf.splsda.host.stress <- perf(host.splsda.stress, validation = "Mfold", 
+                             folds = 5, nrepeat = 100,
+                             progressBar = TRUE, auc = TRUE) 
+plot(perf.splsda.host.stress, col = color.mixo(5:7), sd = TRUE,
+     legend.position = "horizontal")                      
+perf.splsda.host.stress$choice.ncomp #6 components
+perf.splsda.host.stress$error.rate.class$mahalanobis.dist  #BER around 0.45 for 6 comp                      
+list.keepX <- c(1:10,  seq(10, 200, 10)) #I chose this grid after multiple trials starting with 1-300                      
+tune.splsda.host.stress <- tune.splsda(X, Y, ncomp=6, # calculate for first 6 components (based on optimal see above)
+                                    validation = 'Mfold',
+                                    folds = 5, nrepeat = 100, # use repeated cross-validation
+                                    dist = 'mahalanobis.dist', # use mahalanobis.dist measure
+                                    measure = "BER", #use  balanced error rate of dist measure instead of overall because I have unbalanced designed (suggested in mixomics book)
+                                    test.keepX = list.keepX, #number of variables to select on each component
+                                    progressBar = TRUE)                       
+head (tune.splsda.host.stress$error.rate)
+head (tune.splsda.host.stress$error.rate.class) 
+plot(tune.splsda.host.stress, col = color.jet(6)) #error rate around 0.45 for 1 comp!                    
+tune.splsda.host.stress$choice.ncomp$ncomp #1 comp
+tune.splsda.host.stress$choice.keepX #4
+optimal.keepX <- tune.splsda.host.stress$choice.keepX[1:optimal.ncomp]
+final.multilevel.splsda.host.stress <- splsda(X, Y, ncomp = 2,  #I choose 2 comp instead of optimal (1) only for visuaization purposes
+                                              optimal.keepX,
+                                           multilevel = design)                      
+Colors <- c(
+  "#ECBE92", "#F7794D", "#B3B4B4")
+plotIndiv(final.multilevel.splsda.host.stress, group = meta_df$stress, 
+          comp = c(1,2),
+          ind.names = FALSE,
+          legend = TRUE, legend.title = 'Heat stress',
+          ellipse = TRUE, col.per.group = Colors, 
+          title = 'Sample Plot of multilevel sPLS-DA on host data, comp 1 & 2',
+          pch = as.factor(meta_df$genotype), legend.title.pch = 'Parental colony')   
+pdf(file = "multilevel.splsda.host.stress.pdf", height = 10, width = 10)
+cim.final.multilevel.splsda.host.stress <- cim(final.multilevel.splsda.host.stress, margins = c(10, 10), 
+                                            row.names = paste(meta_df$TreatTime, meta_df$sample_id, sep = "_"),
+                                            row.sideColors = color.mixo(Y),
+                                            col.names = TRUE, legend=list(legend = levels(Y), 
+                                                                          title = "Heat stress", cex = 0.8), 
+                                            comp=1) #optimal component number
+dev.off()                       
+                       
+                       
+                       
