@@ -482,7 +482,7 @@ plotIndiv(pca.result,
           ellipse = FALSE, col.per.group = Colors)                        
      
                        
- ###multilevel PCA (to account for effect of parental colony)
+###multilevel PCA (to account for effect of parental colony)
   
 design <- data.frame(sample = meta_df$genotype) #repeated measures are accounted for (parental colony in my case)
 pca.multilevel.result <- pca(X, ncomp = 4, scale = FALSE, center = TRUE, 
@@ -494,5 +494,49 @@ plotIndiv(pca.multilevel.result,
           title = 'MULTILEVEL PCA plutea cladocopium sample plot', col.per.group = Colors) #plot the samples                      
                        
                        
+###multilevel sPlS-DA (following http://mixomics.org/case-studies/multilevel-vac18-case-study/)  
                        
+dim(X)
+Y <- as.factor(meta_df$stress)
+summary(Y) 
+cladocopium.splsda.stress <- splsda(X, Y, ncomp = 10)  # set ncomp to 10 for performance       
+perf.cladocopium.splsda.stress <- perf(cladocopium.splsda.stress, validation = "Mfold", 
+  folds = 5, nrepeat = 100, 
+  progressBar = FALSE, auc = TRUE)
+plot(perf.cladocopium.splsda.stress, col = color.mixo(5:7), sd = TRUE,
+     legend.position = "horizontal")                       
+perf.cladocopium.splsda.stress$choice.ncomp #1 component                       
+perf.cladocopium.splsda.stress$error.rate.class$mahalanobis.dist #BER around 0.2 for 1 comp
+list.keepX <- c(1:10,  seq(100, 150, 3))  #chose this grad after multiple trials starting with 1-300
+tune.splsda.cladocopium.stress <- tune.splsda(X, Y, ncomp = 2, # calculate for 2 components (1 is optimal - see above - but still trying with 2 here - following mixomics book)
+   validation = 'Mfold',
+  folds = 5, nrepeat = 100, # use repeated cross-validation
+  dist = 'mahalanobis.dist', # use mahalanobis.dist measure
+ measure = "BER", # use  balanced error rate of dist measure instead of overall because I have unbalanced designed (suggested in mixomics book)
+  test.keepX = list.keepX #number of variables to select on each component
+)                       
+head (tune.splsda.cladocopium.stress$error.rate)
+head (tune.splsda.cladocopium.stress$error.rate.class)
+plot(tune.splsda.cladocopium.stress, col = color.jet(2)) #error rate around 0.25               
+tune.splsda.cladocopium.stress$choice.ncomp$ncomp #1
+tune.splsda.cladocopium.stress$choice.keepX #142
+final.multilevel.splsda.cladocopium.stress <- splsda(X, Y, ncomp = 2, #I choose 2 comp instead of optimal (1) only for visuaization purposes
+                                              keepX = c(142, 142), #kept same number as per first component as suggeated in book when optimal comp =1
+                                              multilevel = design)                       
+Colors <- c(
+  "#ECBE92", "#F7794D", "#B3B4B4")
+plotIndiv(final.multilevel.splsda.cladocopium.stress, group = meta_df$stress, 
+          ind.names = FALSE, 
+          legend = TRUE, legend.title = 'Heat stress',
+          pch = as.factor(meta_df$genotype), legend.title.pch = 'Parental colony',
+          ellipse = TRUE, col.per.group = Colors,
+          title = 'Sample Plot of multilevel sPLS-DA on plutea cladocopium data')                       
+ pdf(file = "cimCladocopium_splsda_stress.pdf", height = 50, width = 50)
+cim.final.multilevel.splsda.cladocopium.stress <- cim(final.multilevel.splsda.cladocopium.stress,margins = c(10, 6), 
+                                                   row.names = paste(meta_df$DHW, meta_df$sample_id, sep = "_"),
+                                                   row.sideColors = color.mixo(Y),
+                                                   col.names = TRUE, legend=list(legend = levels(Y), 
+                                                                                 title = "DHW", cex = 0.8),
+                                                   comp=1) #ncomp=1 is the optimal
+dev.off()                         
                        
