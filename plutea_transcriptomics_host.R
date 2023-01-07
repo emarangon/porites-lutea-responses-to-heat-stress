@@ -654,7 +654,7 @@ tune.splsda.host.stress$choice.ncomp$ncomp #1 comp
 tune.splsda.host.stress$choice.keepX #4
 optimal.keepX <- tune.splsda.host.stress$choice.keepX[1:optimal.ncomp]
 final.multilevel.splsda.host.stress <- splsda(X, Y, ncomp = 2,  #I choose 2 comp instead of optimal (1) only for visuaization purposes
-                                              optimal.keepX,
+                                              keepX = optimal.keepX,
                                            multilevel = design)                      
 Colors <- c(
   "#ECBE92", "#F7794D", "#B3B4B4")
