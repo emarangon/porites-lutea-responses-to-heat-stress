@@ -520,8 +520,9 @@ head (tune.splsda.cladocopium.stress$error.rate.class)
 plot(tune.splsda.cladocopium.stress, col = color.jet(2)) #error rate around 0.25               
 tune.splsda.cladocopium.stress$choice.ncomp$ncomp #1
 tune.splsda.cladocopium.stress$choice.keepX #142
+optimal.keepX <- tune.splsda.cladocopium.stress$choice.keepX[1:optimal.ncomp]
 final.multilevel.splsda.cladocopium.stress <- splsda(X, Y, ncomp = 2, #I choose 2 comp instead of optimal (1) only for visuaization purposes
-                                              keepX = c(142, 142), #kept same number as per first component as suggeated in book when optimal comp =1
+                                              keepX = optimal.keepX,
                                               multilevel = design)                       
 Colors <- c(
   "#ECBE92", "#F7794D", "#B3B4B4")
