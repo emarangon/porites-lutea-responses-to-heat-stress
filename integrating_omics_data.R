@@ -1,8 +1,8 @@
 
 
-##############################################################################################
-################### plutea - heat stress experiment - integrating omics data #################
-##############################################################################################
+######################################################################################################################
+################### plutea - heat stress experiment - integrating omics data using DIABLO (mixOmics) #################
+######################################################################################################################
 
 ##author EMMA MARANGON
 
@@ -14,13 +14,13 @@
 
 ###loading libraries
 
-library(tidyverse) #includes ggplot2, dplyr, tibble, tidyR
 library(phyloseq) #microbial analyses
-library(edgeR) #transcriptomic analyses
-library(limma)  #transcriptomic analyses
-library (DESeq2) #for normalization transcriptomics for mixomics
-library(mixOmics) #intergrating omics data
 library(plyr) #calculate means etc for metadata
+library(tidyverse) #includes ggplot2, dplyr, tibble, tidyR 
+library(mixOmics)#intergrating omics data
+library(edgeR)#transcriptomic analyses
+library(limma)#transcriptomic analyses
+library (DESeq2) #for normalization for WGCNA
 
 
 #############################################################
@@ -68,7 +68,7 @@ AllTaxa = taxa_names(phyloseq_merged_filtered_Porites)
 AllTaxa <- AllTaxa[!(AllTaxa %in% contaminants_only)]
 phyloseq_merged_filtered_Porites_NOcontaminants = prune_taxa(AllTaxa, phyloseq_merged_filtered_Porites)
 
-### more filtering (keeping only samples used also for transcriptomics)
+### more filtering (keeping only samples used for transcriptomics)
 phyloseq_merged_filtered_Porites_NOcontaminants_noP2 <- subset_samples(phyloseq_merged_filtered_Porites_NOcontaminants, genotype != "P2")
 phyloseq_merged_filtered_Porites_noP2_mixomics <- phyloseq_merged_filtered_Porites_NOcontaminants_noP2 %>% subset_samples(sampleType != "food" & sampleType != "seawater" & sampleType != "blank" & sampleType != "negative" & 
                                                                                             TreatTime != "baseline.baseline" & timePoint != "T1"  & timePoint != "T5" & timePoint != "T3" &
@@ -220,6 +220,25 @@ meta_2<-  dplyr::left_join(meta_1, pr_porites2, by=c('sample_id'='sample_id', 't
 meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
 meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
 head(meta_df)
+
+physio.data <- meta_df %>% column_to_rownames("sample_id") %>% dplyr::select (Respiration, Photosynthesis, RatioPR, BleachigScore, PhotochemicalEfficiency, genotype, TreatTime, DHW, stress)
+physio.data <- as.data.frame(physio.data)
+dim(physio.data)
+head(physio.data)
+rownames (physio.data)
+rownames(physio.data) <- c(220,240,312, 297, 
+                           184, 190, 286, 234,
+                           135, 210, 266, 216,
+                           263, 200, 142, 152,
+                           231, 179, 140, 284,
+                           180, 136, 177, 211,
+                           315, 173, 199, 178,
+                           202, 318, 242) #need to rename
+
+order <- c("135", "136", "140", "142", "152", "173", "177", "178", "179", "180", "184", "190", "199", "200", "202", "210", "211", "216", "220", "231", "234", "240", "242", "263", "266", "284", "286", "297", "312", "315", "318")
+physio.data_df <- as.data.frame(physio.data) %>% rownames_to_column("sample")
+physio.data_df$sample <- as.factor(physio.data_df$sample)
+YwFactors <- physio.data_df[match(order, physio.data_df$sample),] %>% remove_rownames() %>% column_to_rownames("sample") #reordering datasets
 
 
 ###normalization using DESeq2
@@ -375,28 +394,97 @@ dim(X_cladocopium_df_final) #7,627 genes
 
 
 
-
-############# ############# ############# ############# ############# ############# ############# ############# 
-############# ############# MULTILEVEL canonical sPLS (two datasets: RNA host and RNA symb)  ############# ########
-############# ############# ############# ############# ############# ############# ############# ############# 
-
-X<- as.data.frame(X_host_df_final) #RNA host
-Y <- as.data.frame(X_cladocopium_df_final) #RNA Symbiodiniaceae
-rownames (Y)
-head(Y)
-dim(Y)
-dim(X)
-design <- data.frame(sample = meta.data$genotype)
-summary(as.factor(meta.data$genotype))
-
-#data exploration
-pca.gene.host <- pca(X, ncomp = 10, center = TRUE, scale = TRUE)
-pca.gene.symb <- pca(Y, ncomp = 10, center = TRUE, scale = TRUE) 
-plot(pca.gene.host)
-plot(pca.gene.symb)
+##############################################################################################
+########################################## DIABLO  ###########################################
+##############################################################################################
+#following http://mixomics.org/mixdiablo/diablo-tcga-case-study/
 
 
+#I want to apply multilevel analyses to take into account the effect of Parental colony (i.e. genotype)
+YwFactors$genotype = as.factor(YwFactors$genotype)
+design <- data.frame(genotype = YwFactors$genotype)
+Xw_rna_symb<-withinVariation(X_cladocopium_df_final,design=design)
+Xw_rna_host<-withinVariation(X_host_df_final,design=design)
+Xw_amplicon<-withinVariation(data.offset_transf,design=design)
+
+data = list (rna_symb = Xw_rna_symb, 
+             rna_host = Xw_rna_host, 
+             amplicon = Xw_amplicon
+             )
+lapply(data, dim)
+
+YwFactors$stress = as.factor(YwFactors$stress)
+Y = YwFactors$stress 
+summary(Y)
 
 
+#### Pairwise PLS Comparisons - generate three pairwise PLS models to understand the correlation between the datasets
+
+list.keepX = c(25, 25) # select arbitrary values of features to keep
+list.keepY = c(25, 25)
+
+pls1 <- spls(data[["rna_symb"]], data[["rna_host"]], 
+             keepX = list.keepX, keepY = list.keepY) 
+pls2 <- spls(data[["rna_symb"]], data[["amplicon"]], 
+             keepX = list.keepX, keepY = list.keepY)
+pls3 <- spls(data[["rna_host"]], data[["amplicon"]], 
+             keepX = list.keepX, keepY = list.keepY)
+
+plotVar(pls1, cutoff = 0.5, title = "(a) rna_symb vs rna_host", 
+        legend = c("rna_symb", "rna_host"), 
+        var.names = FALSE, style = 'graphics', 
+        pch = c(16, 17), cex = c(2,2), 
+        col = c('darkorchid', 'lightgreen'))
+
+plotVar(pls2, cutoff = 0.5, title = "(b) rna_symb vs amplicon", 
+        legend = c("rna_symb", "amplicon"), 
+        var.names = FALSE, style = 'graphics', 
+        pch = c(16, 17), cex = c(2,2), 
+        col = c('darkorchid', 'lightgreen'))
+
+plotVar(pls3, cutoff = 0.5, title = "(c) rna_host vs amplicon", 
+        legend = c("rna_host", "amplicon"), 
+        var.names = FALSE, style = 'graphics', 
+        pch = c(16, 17), cex = c(2,2), 
+        col = c('darkorchid', 'lightgreen'))
+
+cor(pls1$variates$X, pls1$variates$Y) 
+cor(pls2$variates$X, pls2$variates$Y) 
+cor(pls3$variates$X, pls3$variates$Y) 
+#data sets are highly correlated
 
 
+####initial DIABLO model 
+
+design = matrix(0.6, ncol = length(data), nrow = length(data),
+                dimnames = list(names(data), names(data)))
+diag(design) = 0 # set diagonal to 0s
+design
+
+basic.diablo.model = block.splsda(X = data, Y = Y, ncomp = 5, design = design)
+
+perf.diablo = perf(basic.diablo.model, validation = 'Mfold',
+                   folds = 5, nrepeat = 100) 
+plot(perf.diablo)
+
+# set the optimal ncomp value
+ncomp = perf.diablo$choice.ncomp$WeightedVote["Overall.BER", "mahalanobis.dist"] 
+ncomp
+perf.diablo$choice.ncomp$WeightedVote 
+#set grid (the model was first run with bigger grids and then based on that results these values were chosen)
+test.keepX = list (rna_symb = c(5:9, seq(10, 50, 3)), 
+                   rna_host = c(5:9, seq(10, 50, 3)),
+                   amplicon = c(5:9, seq(10, 50, 3)))
+
+tune.diablo = tune.block.splsda(X = data, Y = Y, ncomp = ncomp, test.keepX = test.keepX, design = design, validation = 'Mfold', folds = 5, nrepeat = 50, dist = "mahalanobis.dist")
+save (tune.diablo, file="./tune.diablo.R.data")
+
+head (tune.diablo$error.rate)
+head (tune.diablo$error.rate.class)
+list.keepX = tune.diablo$choice.keepX 
+list.keepX
+
+final.diablo.model = block.splsda(X = data, Y = Y, ncomp = ncomp, 
+                                  keepX = list.keepX, design = design)
+save (final.diablo.model, file="./final.diablo.R.data")
+final.diablo.model$design
