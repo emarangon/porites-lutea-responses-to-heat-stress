@@ -339,14 +339,14 @@ e.fit.cont <- eBayes(fit.cont)
 top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes")
 host_only_degs_HT4vsAll_block_logF = keep[,c(1,2)]
-#save as 'host_genes_HT4vsAll_block_logFC.csv' 
+#save host_only_degs_HT4vsAll_block_logF as 'host_genes_HT4vsAll_block_logFC.csv' 
      
 my_GO_host <- left_join (host_only_degs_HT4vsAll_block_logF, host_annotations_GO, by=c("genes"="query"))
 my_GO_host$GOs[is.na(my_GO_host$GOs)] <- "unknown"
 dim(my_GO_host)
 my_GO_host = my_GO_host[,c(1, 3)]
 head (my_GO_host)
-#save as 'host_annotations_genome_GO.tab'
+#save my_GO_host as 'host_annotations_genome_GO.tab'
                        
                        
 ################# BP                     
@@ -457,14 +457,14 @@ e.fit.cont <- eBayes(fit.cont)
 top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes")
 host_only_degs_HT2vsAll_block_logF = keep[,c(1,2)]                    
-#save as 'host_genes_HT2vsAll_block_logFC.csv'                    
+#save host_only_degs_HT2vsAll_block_logF as 'host_genes_HT2vsAll_block_logFC.csv'                    
                        
 my_GO_host <- left_join (host_only_degs_HT2vsAll_block_logF, host_annotations_GO, by=c("genes"="query"))
 my_GO_host$GOs[is.na(my_GO_host$GOs)] <- "unknown"
 dim(my_GO_host)
 my_GO_host = my_GO_host[,c(1, 3)]
 head (my_GO_host)
-#save as 'host_annotations_genome_GO.tab'
+#save my_GO_host as 'host_annotations_genome_GO.tab'
                        
                        
 ################# BP
