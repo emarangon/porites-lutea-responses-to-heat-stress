@@ -339,15 +339,22 @@ e.fit.cont <- eBayes(fit.cont)
 top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes")
 host_only_degs_HT4vsAll_block_logF = keep[,c(1,2)]
-#save as 'host_only_degs_HT4vsAll_block_logF.csv' 
+#save as 'host_genes_HT4vsAll_block_logFC.csv' 
      
+my_GO_host <- left_join (host_only_degs_HT4vsAll_block_logF, host_annotations_GO, by=c("genes"="query"))
+my_GO_host$GOs[is.na(my_GO_host$GOs)] <- "unknown"
+dim(my_GO_host)
+my_GO_host = my_GO_host[,c(1, 3)]
+head (my_GO_host)
+#save as 'host_annotations_genome_GO.tab'
+                       
                        
 ################# BP                     
-input="host_only_degs_HT4vsAll_block_logF.csv"
-goAnnotations="host_annotations_GO.tab"
+input="host_genes_HT4vsAll_block_logFC.csv"
+goAnnotations="host_annotations_genome_GO.tab"
 goDatabase="gene_ontology_OBO_June22.obo"
 goDivision="BP" #biological processes
-source("gomwu.functions.R")                       
+source("gomwu.functions.R")                        
                        
 # ------------- Calculating stats
 # It might take a few minutes for MF and BP. Do not rerun it if you just want to replot the data with different cutoffs, go straight to gomwuPlot. If you change any of the numeric values below, delete the files that were generated in previos runs first.
@@ -384,8 +391,8 @@ write.csv(BP_results, "BP_results_NOvsMODRATE.csv")
                        
                        
 ################# MF                         
-input="host_only_degs_HT4vsAll_block_logF.csv"
-goAnnotations="host_annotations_GO.tab"
+input="host_genes_HT4vsAll_block_logFC.csv"
+goAnnotations="host_annotations_genome_GO.tab"
 goDatabase="gene_ontology_OBO_June22.obo"
 goDivision="MF" #Molecular Function
 source("gomwu.functions.R")
@@ -450,12 +457,19 @@ e.fit.cont <- eBayes(fit.cont)
 top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes")
 host_only_degs_HT2vsAll_block_logF = keep[,c(1,2)]                    
-#save as 'host_only_degs_HT2vsAll_block_logF.csv'                    
+#save as 'host_genes_HT2vsAll_block_logFC.csv'                    
+                       
+my_GO_host <- left_join (host_only_degs_HT2vsAll_block_logF, host_annotations_GO, by=c("genes"="query"))
+my_GO_host$GOs[is.na(my_GO_host$GOs)] <- "unknown"
+dim(my_GO_host)
+my_GO_host = my_GO_host[,c(1, 3)]
+head (my_GO_host)
+#save as 'host_annotations_genome_GO.tab'
                        
                        
 ################# BP
-input="host_only_degs_HT2vsAll_block_logF.csv"
-goAnnotations="host_annotations_GO.tab"
+input="host_genes_HT2vsAll_block_logFC.csv"
+goAnnotations="host_annotations_genome_GO.tab"
 goDatabase="gene_ontology_OBO_June22.obo"
 goDivision="BP" #biological processes
 source("gomwu.functions.R")
@@ -495,8 +509,8 @@ write.csv(BP_results, "BP_results_graph_NOvsLOW.csv")
                        
                        
 ################# MF
-input="host_only_degs_HT2vsAll_block_logF.csv"
-goAnnotations="host_annotations_GO.tab"
+input="host_genes_HT2vsAll_block_logFC.csv"
+goAnnotations="host_annotations_genome_GO.tab"
 goDatabase="gene_ontology_OBO_June22.obo"
 goDivision="MF" #Molecular Function
 source("gomwu.functions.R")
