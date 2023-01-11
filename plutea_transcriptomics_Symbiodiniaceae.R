@@ -203,8 +203,16 @@ e.fit.cont <- eBayes(fit.cont)
 top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes")
 cladocopium_genes_HT4vsAll_block_logF = keep[,c(1,2)] #keep only first and 2nd column
-#save as 'cladocopium_genes_HT4vsAll_block_logFC.csv'                        
+#save cladocopium_genes_HT4vsAll_block_logF as 'cladocopium_genes_HT4vsAll_block_logFC.csv'                        
 
+my_GO_cladocopium <- left_join(cladocopium_genes_HT4vsAll_block_logF, cladocopium_annotations_GO, by = c("genes" = "query"))
+my_GO_cladocopium$GOs[is.na(my_GO_cladocopium$GOs)] <- "unknown"
+dim(my_GO_cladocopium)
+head (my_GO_cladocopium)
+my_GO_cladocopium = my_GO_cladocopium[,c(1, 3)]
+head (my_GO_cladocopium)
+#save my_GO_cladocopium as 'cladocopium_annotations_genome_GO.tab'                        
+                       
                        
 ################# BP              
 input="cladocopium_genes_HT4vsAll_block_logFC.csv"
@@ -317,8 +325,15 @@ top.table <- topTable(e.fit.cont, sort.by = "P", n = Inf)
 keep <- tibble::rownames_to_column(top.table, "genes") 
 cladocopium_genes_HT2vsAll_block_logF = keep[,c(1,2)] #keep only first and 2nd column
 head (cladocopium_genes_HT2vsAll_block_logF)
-#save as 'cladocopium_genes_HT2vsAll_block_logFC.csv' 
+#save cladocopium_genes_HT2vsAll_block_logF as 'cladocopium_genes_HT2vsAll_block_logFC.csv' 
   
+my_GO_cladocopium <- left_join(cladocopium_genes_HT2vsAll_block_logF, cladocopium_annotations_GO, by = c("genes" = "query"))
+my_GO_cladocopium$GOs[is.na(my_GO_cladocopium$GOs)] <- "unknown"
+dim(my_GO_cladocopium)
+my_GO_cladocopium = my_GO_cladocopium[,c(1, 3)]
+head (my_GO_cladocopium)
+#save my_GO_cladocopium as cladocopium_annotations_genome_GO.tab
+                       
                        
 ################# BP
 input="cladocopium_genes_HT2vsAll_block_logFC.csv"
