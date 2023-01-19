@@ -174,7 +174,7 @@ ggplot(All_noP2_noT5a, aes(y=BleachigScore, x=TimePoint, color=Treatment))+
   geom_point(position=position_dodge(width=0.75),aes(group=Treatment))
 
 
-#final plot
+###final plot
 tgc <- summarySE(All_noP2_noT5a, measurevar="BleachigScore", groupvars=c("TimePoint", "Treatment"))
 tgc
 
@@ -213,3 +213,93 @@ B.resid <- Bmod5 %>% simulateResiduals(plot =TRUE) #assumptions met!
 Bmod5 %>% summary ()
 Bmod5 %>% r.squaredGLMM() #our model explains 55% of variability
 Bmod5 %>% emmeans (~Treatment|TimePoint) %>% pairs %>%rbind(adjust='sidak')
+
+
+
+############################################################################
+#################### Photochemical effective efficiency ####################
+############################################################################
+
+###preprocessing
+Light_1_filtered_sd <- read.csv("./Light_porites_filteringSD.csv", header = TRUE, sep=",")
+Light_2_filtered_sd <- unite(Light_1_filtered_sd, ID2, TimePoint:Light_Dark, remove=FALSE)
+Light_2_filtered_sd$ID2 <- as.factor(Light_2_filtered_sd$ID2)
+
+Light_3_filtered_sd <- unite(Light_2_filtered_sd, ID3, ID2:Sample_ID, remove=FALSE)
+Light_3_filtered_sd$ID3 <- as.factor(Light_3_filtered_sd$ID3)
+
+Light_4_filtered_sd <- unite(Light_3_filtered_sd, ID4, ID3:Tank, remove=FALSE)
+Light_4_filtered_sd$ID4 <- as.factor(Light_4_filtered_sd$ID4)
+
+Light_5_filtered_sd <- unite(Light_4_filtered_sd, ID5, ID4:Treatment, remove=FALSE)
+Light_5_filtered_sd$ID5 <- as.factor(Light_5_filtered_sd$ID5)
+
+Light_6_filtered_sd <- ddply(Light_5_filtered_sd,~ID5,summarise,meanY=mean(Y))
+
+Light_7_filtered_sd <-Light_6_filtered_sd %>%
+  separate (ID5, c("TimePoint", "Light_Dark", "Sample_ID", "Tank", "Treatment"), "_")
+Light_7_filtered_sd$Tank <- as.factor(Light_7_filtered_sd$Tank)
+Light_7_filtered_sd$Light_Dark <- factor(Light_7_filtered_sd$Light_Dark)
+Light_7_filtered_sd$TimePoint <- factor(Light_7_filtered_sd$TimePoint)
+Light_7_filtered_sd$Treatment <- factor(Light_7_filtered_sd$Treatment)
+Light_7_filtered_sd$Sample_ID <- factor(Light_7_filtered_sd$Sample_ID)
+summary (Light_7_filtered_sd)
+
+Light_7_filtered_sd$Parent = Light_7_filtered_sd$Sample_ID
+Light_7_filtered_sd %>% mutate(Parent = substr(Parent, 1, 2)) -> Light_8_filtered_sd
+names(Light_8_filtered_sd)[names(Light_8_filtered_sd)=="meanY"] <- "PhotochemicalEfficiency"
+
+Light_filtered_sd <- Light_8_filtered_sd %>% 
+  mutate(Parent = factor(Parent),
+         Tank = factor(Tank),
+         Treatment = factor(Treatment),
+         TimePoint = factor (TimePoint),
+         Sample_ID = factor(Sample_ID))
+summary(Light_filtered_sd)
+
+Light_filtered_sd_noP2 <- subset(Light_filtered_sd, Parent != "P2" & TimePoint !="T5a") %>% droplevels() #filtering out final data
+
+
+###final plot
+Light_filtered_sd_noP2_graph <- Light_filtered_sd_noP2 %>% 
+  mutate(
+    Time = case_when(
+      TimePoint == "T0" ~ "0",
+      TimePoint == "T1" ~ "19",
+      TimePoint == "T2" ~ "27",
+      TimePoint == "T3" ~ "34",
+      TimePoint == "T4" ~ "41",
+      TimePoint == "T5b" ~ "56"
+    )
+  )
+
+tgc <- summarySE(Light_filtered_sd_noP2_graph, measurevar="PhotochemicalEfficiency", groupvars=c("Time", "Treatment"))
+tgc
+
+tgc$Time = as.numeric(tgc$Time) #need to use this variabe as numeric if I want to add geom_line (lines) to graph
+
+ggplot(tgc, aes(Time, PhotochemicalEfficiency, colour = Treatment)) +
+  geom_line() +
+  scale_x_continuous(breaks=c(0, 19, 27, 34, 41, 56)) + 
+    theme_classic() + geom_line(size=0.7)+ 
+  scale_color_manual(values=c("#B4B4B4", "#AC664B")) + 
+  geom_point (aes(x = Time, y = PhotochemicalEfficiency, fill=Treatment),
+                        shape=21) + 
+  scale_fill_manual(values=c("#B4B4B4", "#AC664B")) + 
+  geom_errorbar(aes(ymin=PhotochemicalEfficiency-se, ymax=PhotochemicalEfficiency+se), 
+                width=.4, lwd=.7,  
+                position=position_dodge(.05)) +
+  ggtitle("Porites Photochemical Effective Efficiency") 
+
+
+###statistics (final model)
+Light_filtered_sd_noP2_sqrt <- Light_filtered_sd_noP2 %>% dplyr::mutate(sqrt_efficiency = sqrt(PhotochemicalEfficiency))
+Emod6 = glmmTMB(sqrt_efficiency ~ Parent+Treatment*TimePoint + 
+                  (1|Tank/Sample_ID), data = Light_filtered_sd_noP2_sqrt, beta_family (link='logit'), REML = TRUE)
+
+B.resid <- Emod6 %>% simulateResiduals(plot=TRUE, integerResponse = TRUE) #acceptable
+Emod6 %>% summary ()
+Emod6 %>% emmeans (~Treatment|TimePoint) %>% pairs %>%rbind(adjust='sidak')
+
+
+
