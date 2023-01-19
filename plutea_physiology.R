@@ -40,7 +40,7 @@ All <- subset(All, Respiration != "NA" ) %>% droplevels()
 All <- subset(All, Photosynthesis != "NA" )  %>% droplevels()
 All <- subset(All, RatioPR != "NA" )  %>% droplevels()
 summary(All)
-All_noP2 <- subset (All, Parent !="2") %>% droplevels # I remove P2 because it was identified as Porites lobata
+All_noP2 <- subset (All, Parent !="2") %>% droplevels #I remove P2 because it was identified as Porites lobata
 summary(All_noP2)
 
 ###data exploration
@@ -68,12 +68,12 @@ tgc
 
 ggplot(tgc, aes(Time, Photosynthesis, colour = Treatment)) +
   geom_line() +
-  scale_x_continuous(breaks=c(0, 17, 25, 32, 39, 46, 53)) + #to set tick marks on x axis
+  scale_x_continuous(breaks=c(0, 17, 25, 32, 39, 46, 53)) + 
     theme_classic() + geom_line(size=0.7)+ #line width
-scale_color_manual(values=c("#B4B4B4", "#AC664B")) + #colour lines
+scale_color_manual(values=c("#B4B4B4", "#AC664B")) + 
 geom_point (aes(x = Time, y = Photosynthesis, fill=Treatment),
-                        shape=21) + #to include points on lines
-  scale_fill_manual(values=c("#B4B4B4", "#AC664B")) + #colour points
+                        shape=21) +
+  scale_fill_manual(values=c("#B4B4B4", "#AC664B")) +
   geom_errorbar(aes(ymin=Photosynthesis-se, ymax=Photosynthesis+se), 
                 width=.4, lwd=.7,  
                 position=position_dodge(.05)) +
@@ -86,7 +86,7 @@ tgc
 ggplot(tgc, aes(Time, Respiration, colour = Treatment)) +
   geom_line() +
   scale_x_continuous(breaks=c(0, 17, 25, 32, 39, 46, 53)) +
-    theme_classic() + geom_line(size=0.7)+ #line width
+    theme_classic() + geom_line(size=0.7)+ 
 scale_color_manual(values=c("#B4B4B4", "#AC664B")) +
 geom_point (aes(x = Time, y = Respiration, fill=Treatment),
                         shape=21) +
@@ -141,3 +141,75 @@ PRmod5 = glmmTMB(RatioPR ~ Parent+Treatment*TimePoint +
 PR.resid <- PRmod5 %>% simulateResiduals(plot =TRUE) #assumptions met!
 PRmod5 %>% summary () #Treatment*TimePoint sign
 PRmod5 %>% emmeans (~Treatment|TimePoint) %>% pairs %>%rbind(adjust='sidak')
+
+
+
+
+#######################################################
+#################### Health scores ####################
+#######################################################
+
+###preprocessing
+All <- read.csv("./BleachingScores_porites.csv", header = TRUE)
+All <- All %>% 
+  mutate(Parent = factor(Parent),
+         Tank = factor(Tank),
+         Treatment = factor(Treatment),
+         TimePoint = factor(TimePoint),
+         dhw = factor(dhw),
+         Sample.ID = factor (Sample.ID))
+All$Time <- as.numeric(All$Time) #time is continuous 
+All$temp_celsius <- as.numeric(All$temp_celsius)
+summary(All)
+class(All$Time)
+class(All$temp_celsius)
+class(All$Tank)
+All_noP2 <- subset (All, Parent !="P2") %>% droplevels #I remove P2 because it was identified as Porites lobata
+All_noP2_noT5a <- subset (All_noP2, TimePoint !="T5a") %>% droplevels #filter data (remove extra time point)
+
+###data exploration
+ggplot(All_noP2_noT5a, aes(y=BleachigScore, x=TimePoint, color=Treatment))+
+  geom_boxplot()+ 
+  theme_classic() +
+  geom_point(position=position_dodge(width=0.75),aes(group=Treatment))
+
+
+#final plot
+tgc <- summarySE(All_noP2_noT5a, measurevar="BleachigScore", groupvars=c("TimePoint", "Treatment"))
+tgc
+
+tgc2 <- tgc %>% #add a Time column
+  mutate(
+    Time = case_when(
+      TimePoint == "T0" ~ "0",
+      TimePoint == "T1" ~ "19",
+      TimePoint == "T2" ~ "27",
+      TimePoint == "T3" ~ "34",
+      TimePoint == "T4" ~ "41",
+      TimePoint == "T5b" ~ "56"
+    )
+  )
+tgc2$Time <- as.numeric(tgc2$Time)
+
+ggplot(tgc2, aes(Time, BleachigScore, colour = Treatment)) +
+  geom_line() +
+  scale_x_continuous(breaks=c(0, 19, 27, 34, 41, 56)) + 
+  scale_y_continuous(breaks = scales::pretty_breaks(n = 8)) +
+    theme_classic() + geom_line(size=0.7)+ 
+scale_color_manual(values=c("#B4B4B4", "#AC664B")) + 
+geom_point (aes(x = Time, y = BleachigScore, fill=Treatment),
+                        shape=21) + #to include points on lines
+  scale_fill_manual(values=c("#B4B4B4", "#AC664B")) + 
+  geom_errorbar(aes(ymin=BleachigScore-se, ymax=BleachigScore+se), 
+                width=.4, lwd=.7,  
+                position=position_dodge(.05)) +
+  ggtitle("Porites Bleaching score")
+
+
+###statistics (final model)
+Bmod5 = glmmTMB(BleachigScore ~ Parent+TimePoint*Treatment + 
+                  (1|Tank/Sample.ID), data = All_noP2_noT5a, family='gaussian', REML = TRUE)
+B.resid <- Bmod5 %>% simulateResiduals(plot =TRUE) #assumptions met!
+Bmod5 %>% summary ()
+Bmod5 %>% r.squaredGLMM() #our model explains 55% of variability
+Bmod5 %>% emmeans (~Treatment|TimePoint) %>% pairs %>%rbind(adjust='sidak')
