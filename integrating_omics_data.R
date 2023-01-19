@@ -469,9 +469,11 @@ plot(perf.diablo)
 
 # set the optimal ncomp value
 ncomp = perf.diablo$choice.ncomp$WeightedVote["Overall.BER", "mahalanobis.dist"] 
-ncomp
-perf.diablo$choice.ncomp$WeightedVote 
-#set grid (the model was first run with bigger grids and then based on that results these values were chosen)
+ncomp #n=2 comp are optimal
+perf.diablo$choice.ncomp$WeightedVote
+
+# tuning the number of features
+#set grid (the model was first run with bigger grids; based on that results, the following values were chosen)
 test.keepX = list (rna_symb = c(5:9, seq(10, 50, 3)), 
                    rna_host = c(5:9, seq(10, 50, 3)),
                    amplicon = c(5:9, seq(10, 50, 3)))
@@ -484,7 +486,29 @@ head (tune.diablo$error.rate.class)
 list.keepX = tune.diablo$choice.keepX 
 list.keepX
 
+#final model
 final.diablo.model = block.splsda(X = data, Y = Y, ncomp = ncomp, 
                                   keepX = list.keepX, design = design)
 save (final.diablo.model, file="./final.diablo.R.data")
 final.diablo.model$design
+
+#plots
+plotArrow(final.diablo.model, ind.names = FALSE, legend = TRUE, 
+          title = 'DIABLO',
+          col.per.group = c("#ECBE92", "#F7794D", "#B3B4B4"),
+          pch.size = 2)
+
+circosPlot(final.diablo.model, cutoff = 0.8, line = TRUE,
+           color.blocks= c('#0E5E6F', '#BAD1C2','#F2DEBA'),
+           color.cor = c("#EEE3CB", "#7895B2"), 
+           color.Y = c("#ECBE92", "#F7794D", "#B3B4B4"),
+           size.variables = 0.2, size.labels = 1, size.legend = 0.7,
+           linkWidth = 1)
+
+pdf(file = "loading_diablo_comp1.pdf", height = 50, width = 50)
+loading_diablo_comp1 <- plotLoadings(final.diablo.model, comp = 1, contrib = 'max', method = 'median')
+dev.off()
+
+pdf(file = "loading_diablo_comp2.pdf", height = 50, width = 50)
+loading_diablo_comp2 <- plotLoadings(final.diablo.model, comp = 2, contrib = 'max', method = 'median')
+dev.off()
