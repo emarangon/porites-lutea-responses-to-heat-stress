@@ -500,7 +500,7 @@ plotArrow(final.diablo.model, ind.names = FALSE, legend = TRUE,
 
 circosPlot(final.diablo.model, cutoff = 0.8, line = TRUE,
            color.blocks= c('#BCD0C2', '#EFDEBE','#DED1B8'),
-           color.cor = c("#4564A8", "#A96457"),
+           color.cor = c("#A96457", "#4564A8"),
            color.Y = c("#ECBE92", "#F7794D", "#B3B4B4"),
            size.variables = 0.2, size.labels = 1, size.legend = 0.7,
            linkWidth = 1)
