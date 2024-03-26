@@ -191,7 +191,7 @@ bleaching_porites <- read.csv("./BleachingScores_porites.csv", header = TRUE)
 bleaching_porites1 <- dplyr::filter (bleaching_porites, TimePoint =="T0" | TimePoint =="T2" | TimePoint =="T4")
 bleaching_porites2 <- bleaching_porites1 %>% dplyr::select (3, 13, 32)
 names(bleaching_porites2)[names(bleaching_porites2) == 'Sample.ID'] <- 'sample_id' #rename column Sample.ID
-Light_1_filtered_sd <- read.csv("./Light_porites_filteringSD.csv", header = TRUE, sep=",")
+Light_1_filtered_sd <- read.csv("./PhotochemicalEfficiency_porites.csv", header = TRUE, sep=",")
 Light_2_filtered_sd <- unite(Light_1_filtered_sd, ID2, TimePoint:Light_Dark, remove=FALSE)
 Light_2_filtered_sd$ID2 <- as.factor(Light_2_filtered_sd$ID2)
 Light_3_filtered_sd <- unite(Light_2_filtered_sd, ID3, ID2:Sample_ID, remove=FALSE)
@@ -221,7 +221,7 @@ meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sampl
 meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
 head(meta_df)
 
-physio.data <- meta_df %>% column_to_rownames("sample_id") %>% dplyr::select (Respiration, Photosynthesis, RatioPR, BleachigScore, PhotochemicalEfficiency, genotype, TreatTime, DHW, stress)
+physio.data <- meta_df %>% column_to_rownames("sample_id") %>% dplyr::select (Respiration, Photosynthesis, RatioPR, HealthaScore, PhotochemicalEfficiency, genotype, TreatTime, DHW, stress)
 physio.data <- as.data.frame(physio.data)
 dim(physio.data)
 head(physio.data)
