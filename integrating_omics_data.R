@@ -221,7 +221,7 @@ meta_3 <-  dplyr::left_join (meta_2, bleaching_porites2, by=c('sample_id'='sampl
 meta_df <-  dplyr::left_join (meta_3, photefficiency_porites2, by=c('sample_id'='sample_id', 'time'='TimePoint'))
 head(meta_df)
 
-physio.data <- meta_df %>% column_to_rownames("sample_id") %>% dplyr::select (Respiration, Photosynthesis, RatioPR, HealthaScore, PhotochemicalEfficiency, genotype, TreatTime, DHW, stress)
+physio.data <- meta_df %>% column_to_rownames("sample_id") %>% dplyr::select (Respiration, Photosynthesis, RatioPR, HealthScore, PhotochemicalEfficiency, genotype, TreatTime, DHW, stress)
 physio.data <- as.data.frame(physio.data)
 dim(physio.data)
 head(physio.data)
